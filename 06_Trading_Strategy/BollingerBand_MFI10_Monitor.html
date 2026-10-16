@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KOSPI Trader Monitor</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #202923;
+      --muted: #718078;
+      --line: #dce4db;
+      --paper: #f0f3ed;
+      --panel: #ffffff;
+      --forest: #214b3a;
+      --forest-deep: #17382c;
+      --mint: #dcefe3;
+      --lime: #d4ed77;
+      --coral: #ca5c46;
+      --blue: #4e78a8;
+      --amber: #bd812e;
+      --shadow: 0 5px 18px rgba(27, 48, 36, .055);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: "Aptos", "Malgun Gothic", sans-serif;
+      font-size: 14px;
+    }
+    button, select { font: inherit; }
+    .topbar {
+      min-height: 74px;
+      padding: 13px clamp(16px, 3vw, 42px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      color: #f7faf6;
+      background: var(--forest-deep);
+      border-bottom: 3px solid var(--lime);
+    }
+    .brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+    .brand-mark {
+      width: 38px; height: 38px; flex: none;
+      display: grid; place-items: center;
+      color: var(--forest-deep); background: var(--lime);
+      font-size: 16px; font-weight: 800;
+    }
+    .eyebrow { color: #b5c9ba; font-size: 10px; font-weight: 700; }
+    h1 { margin: 3px 0 0; font-size: 19px; font-weight: 700; }
+    .top-actions { display: flex; align-items: center; gap: 14px; }
+    .connection { display: flex; align-items: center; gap: 8px; color: #d5e5d9; font-size: 12px; }
+    .pulse {
+      width: 8px; height: 8px; border-radius: 50%; background: #98c875;
+      box-shadow: 0 0 0 4px rgba(152, 200, 117, .15);
+    }
+    .pulse.error { background: #ef866d; box-shadow: 0 0 0 4px rgba(239, 134, 109, .15); }
+    .pulse.waiting { background: #e5bd67; box-shadow: 0 0 0 4px rgba(229, 189, 103, .15); }
+    .refresh-button {
+      border: 1px solid #668172; border-radius: 4px; padding: 8px 12px;
+      color: #fff; background: transparent; cursor: pointer;
+    }
+    .refresh-button:hover { background: #2a5643; }
+    main { max-width: 1580px; margin: 0 auto; padding: 20px clamp(14px, 2.6vw, 36px) 28px; }
+    .summary {
+      display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px; margin-bottom: 14px;
+    }
+    .metric {
+      min-height: 76px; padding: 13px 16px; background: var(--panel);
+      border: 1px solid var(--line); border-radius: 5px; box-shadow: var(--shadow);
+    }
+    .metric-label { color: var(--muted); font-size: 11px; font-weight: 650; }
+    .metric-value { margin-top: 6px; font-size: 21px; font-weight: 750; }
+    .metric-value small { color: var(--muted); font-size: 11px; font-weight: 500; }
+    .analysis-grid { display: grid; grid-template-columns: minmax(270px, 320px) minmax(0, 1fr); gap: 14px; }
+    .panel {
+      min-width: 0; background: var(--panel); border: 1px solid var(--line);
+      border-radius: 5px; box-shadow: var(--shadow);
+    }
+    .panel-heading {
+      min-height: 54px; padding: 12px 16px; display: flex; align-items: center;
+      justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line);
+    }
+    .panel-heading h2 { margin: 0; font-size: 14px; font-weight: 750; }
+    .subtle { color: var(--muted); font-size: 11px; }
+    .stock-list { max-height: 370px; overflow: auto; padding: 5px 8px 8px; }
+    .stock-row {
+      width: 100%; min-height: 56px; padding: 8px 9px; display: grid;
+      grid-template-columns: minmax(0, 1fr) auto; gap: 3px 10px;
+      color: inherit; text-align: left; background: transparent;
+      border: 0; border-bottom: 1px solid #edf0eb; cursor: pointer;
+    }
+    .stock-row:last-child { border-bottom: 0; }
+    .stock-row:hover { background: #f4f7f2; }
+    .stock-row.selected { background: #eaf3e9; box-shadow: inset 3px 0 var(--forest); }
+    .stock-name { min-width: 0; overflow: hidden; font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+    .stock-code { margin-left: 6px; color: var(--muted); font-size: 10px; font-weight: 500; }
+    .stock-mfi { align-self: center; color: var(--forest); font-size: 12px; font-weight: 750; }
+    .stock-stats { grid-column: 1 / -1; display: flex; gap: 12px; color: var(--muted); font-size: 10px; }
+    .up { color: var(--coral); }
+    .down { color: var(--blue); }
+    .chart-panel { min-height: 410px; display: flex; flex-direction: column; }
+    .chart-title { min-width: 0; }
+    .chart-title strong { font-size: 14px; }
+    .chart-title span { margin-left: 8px; color: var(--muted); font-size: 11px; }
+    .chart-controls { display: flex; align-items: center; gap: 10px; }
+    .chart-controls select {
+      padding: 6px 24px 6px 8px; color: var(--ink); background: #fff;
+      border: 1px solid var(--line); border-radius: 3px;
+    }
+    .chart-wrap { position: relative; flex: none; height: 315px; min-height: 0; padding: 8px 10px 2px; }
+    canvas { display: block; width: 100%; height: 100%; min-height: 0; }
+    .legend { display: flex; justify-content: center; flex-wrap: wrap; gap: 18px; padding: 4px 12px 13px; color: var(--muted); font-size: 10px; }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .legend i { width: 16px; height: 3px; display: inline-block; background: var(--forest); }
+    .legend .upper i { background: #90b48d; }
+    .legend .middle i { height: 0; background: none; border-top: 2px dashed #bd812e; }
+    .legend .volume i { width: 10px; height: 8px; background: #b9d1bd; }
+    .lower-grid { display: grid; grid-template-columns: minmax(320px, .85fr) minmax(0, 1.15fr); gap: 14px; margin-top: 14px; }
+    .progress-body { padding: 16px; }
+    .current-step { margin-bottom: 15px; padding: 11px 12px; color: var(--forest-deep); background: #edf5e9; border-left: 3px solid var(--forest); font-weight: 700; }
+    .steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
+    .step { min-width: 0; padding-top: 9px; border-top: 2px solid var(--line); color: #8b9890; font-size: 10px; }
+    .step.done { color: var(--forest); border-color: #80a988; }
+    .step.active { color: var(--forest-deep); border-color: var(--lime); font-weight: 750; }
+    .runtime-meta { display: flex; gap: 16px; margin-top: 13px; color: var(--muted); font-size: 10px; }
+    .event-list { max-height: 132px; overflow: auto; padding: 4px 15px 9px; }
+    .event {
+      display: grid; grid-template-columns: 68px 48px minmax(0, 1fr);
+      gap: 8px; padding: 7px 0; border-bottom: 1px solid #edf0eb;
+      font-size: 10px; line-height: 1.45;
+    }
+    .event:last-child { border-bottom: 0; }
+    .event-time, .event-level { color: var(--muted); white-space: nowrap; }
+    .event-level.ERROR, .event-level.CRITICAL { color: #b44433; font-weight: 750; }
+    .event-level.WARNING { color: var(--amber); font-weight: 750; }
+    .event-message { overflow-wrap: anywhere; }
+    .empty, .error-note { padding: 24px 12px; color: var(--muted); text-align: center; font-size: 12px; }
+    .error-note { color: #a43d2f; }
+    .footnote { margin: 12px 2px 0; color: var(--muted); font-size: 10px; }
+    @media (min-width: 1100px) and (min-height: 850px) {
+      .stock-list { max-height: 390px; }
+      .chart-panel { min-height: 450px; }
+      .chart-wrap { height: 355px; }
+    }
+    @media (max-height: 850px) and (min-width: 851px) {
+      .topbar { min-height: 62px; padding-top: 9px; padding-bottom: 9px; }
+      main { padding-top: 10px; padding-bottom: 10px; }
+      .summary { margin-bottom: 10px; }
+      .metric { min-height: 64px; padding-top: 9px; padding-bottom: 9px; }
+      .analysis-grid { gap: 10px; }
+      .stock-list { max-height: 300px; }
+      .chart-panel { min-height: 360px; }
+      .chart-wrap { height: 265px; }
+      .legend { padding-top: 2px; padding-bottom: 8px; }
+      .lower-grid { gap: 10px; margin-top: 10px; }
+      .event-list { max-height: 108px; }
+      .footnote { margin-top: 6px; }
+    }
+    @media (max-width: 850px) {
+      .analysis-grid { grid-template-columns: 1fr; }
+      .stock-list { max-height: 270px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 8px; }
+      .chart-panel { min-height: 390px; }
+      .chart-wrap { height: 270px; }
+      .lower-grid { grid-template-columns: 1fr; }
+      .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 12px; }
+    }
+    @media (max-width: 540px) {
+      .topbar { align-items: flex-start; }
+      .top-actions { flex-direction: column-reverse; align-items: flex-end; gap: 8px; }
+      .connection { font-size: 10px; }
+      h1 { font-size: 16px; }
+      main { padding-top: 12px; }
+      .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      .metric { min-height: 68px; padding: 10px 12px; }
+      .metric-value { font-size: 18px; }
+      .panel-heading { padding: 10px 12px; }
+      .stock-list { padding-left: 5px; padding-right: 5px; }
+      .stock-row { padding-left: 7px; padding-right: 7px; }
+      .chart-wrap { height: 260px; min-height: 0; padding: 6px; }
+      .chart-controls { gap: 5px; }
+      .chart-title span { display: block; margin: 3px 0 0; }
+      .event { grid-template-columns: 59px 42px minmax(0, 1fr); gap: 5px; }
+      .runtime-meta { flex-wrap: wrap; gap: 6px 14px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">BB</div>
+      <div>
+        <div class="eyebrow">KOSPI · LIVE TRADING STRATEGY</div>
+        <h1>볼린저 밴드 / MFI 모니터</h1>
+      </div>
+    </div>
+    <div class="top-actions">
+      <div class="connection"><i class="pulse waiting" id="statusPulse"></i><span id="statusText">연결 확인 중</span></div>
+      <button class="refresh-button" id="refreshButton" type="button">새로고침</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="summary" aria-label="오늘 분석 요약">
+      <div class="metric"><div class="metric-label">분석 기준 일봉</div><div class="metric-value" id="analysisDate">--</div></div>
+      <div class="metric"><div class="metric-label">전략 후보 종목</div><div class="metric-value" id="candidateCount">--</div></div>
+      <div class="metric"><div class="metric-label">오늘 선정 종목</div><div class="metric-value" id="selectedCount">--</div></div>
+      <div class="metric"><div class="metric-label">데이터 갱신</div><div class="metric-value" id="updatedAt">--</div></div>
+    </section>
+
+    <section class="analysis-grid">
+      <section class="panel">
+        <div class="panel-heading">
+          <h2>오늘의 선정 종목</h2>
+          <span class="subtle" id="selectionCaption">전략 신호</span>
+        </div>
+        <div class="stock-list" id="stockList"><div class="empty">분석 결과를 불러오는 중입니다.</div></div>
+      </section>
+
+      <section class="panel chart-panel">
+        <div class="panel-heading">
+          <div class="chart-title"><strong id="chartName">선정 종목을 선택하세요</strong><span id="chartMeta">종가 · 20일 밴드</span></div>
+          <div class="chart-controls">
+            <select id="chartDays" aria-label="차트 기간">
+              <option value="60">60일</option>
+              <option value="90" selected>90일</option>
+              <option value="120">120일</option>
+            </select>
+          </div>
+        </div>
+        <div class="chart-wrap"><canvas id="priceChart" aria-label="볼린저 밴드 가격 차트"></canvas></div>
+        <div class="legend">
+          <span><i></i>종가</span><span class="upper"><i></i>상단 밴드</span>
+          <span class="middle"><i></i>20일 중심선</span><span class="volume"><i></i>거래량</span>
+        </div>
+      </section>
+    </section>
+
+    <section class="lower-grid">
+      <section class="panel">
+        <div class="panel-heading"><h2>실행 절차</h2><span class="subtle" id="taskState">작업 상태 확인 중</span></div>
+        <div class="progress-body">
+          <div class="current-step" id="currentStep">작업 정보를 확인하고 있습니다.</div>
+          <div class="steps" id="steps"></div>
+          <div class="runtime-meta"><span id="lastRun">스케줄러 최근 실행 --</span><span id="lastResult">작업 결과 --</span></div>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-heading"><h2>최근 진행 내역</h2><span class="subtle">Trader 로그</span></div>
+        <div class="event-list" id="eventList"><div class="empty">로그를 불러오는 중입니다.</div></div>
+      </section>
+    </section>
+    <p class="footnote">분석 기준은 DB에 저장된 최근 일봉입니다. 이 화면은 읽기 전용이며 주문을 실행하지 않습니다.</p>
+  </main>
+
+  <script>
+    const $ = (selector) => document.querySelector(selector);
+    let dashboardData = null;
+    let selectedCode = null;
+    let chartData = null;
+    let refreshTimer = null;
+
+    function setText(selector, value) { $(selector).textContent = value ?? '--'; }
+    function formatPercent(value) {
+      if (value === null || value === undefined) return '--';
+      const sign = value > 0 ? '+' : '';
+      return `${sign}${Number(value).toFixed(2)}%`;
+    }
+    function safeNumber(value, digits = 2) {
+      return value === null || value === undefined ? '--' : Number(value).toFixed(digits);
+    }
+
+    async function fetchJson(url) {
+      const response = await fetch(url, { cache: 'no-store' });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+      return payload;
+    }
+
+    function renderStocks(stocks) {
+      const list = $('#stockList');
+      if (!stocks.length) {
+        list.innerHTML = '<div class="empty">오늘 조건을 충족한 선정 종목이 없습니다.</div>';
+        return;
+      }
+      list.replaceChildren(...stocks.map((stock, index) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `stock-row${stock.code === selectedCode ? ' selected' : ''}`;
+        button.dataset.code = stock.code;
+        const name = document.createElement('span');
+        name.className = 'stock-name';
+        name.textContent = stock.company;
+        const code = document.createElement('small');
+        code.className = 'stock-code';
+        code.textContent = stock.code;
+        name.append(code);
+        const mfi = document.createElement('span');
+        mfi.className = 'stock-mfi';
+        mfi.textContent = `MFI ${safeNumber(stock.mfi10)}`;
+        const stats = document.createElement('span');
+        stats.className = 'stock-stats';
+        stats.innerHTML = `<span>3개월 <b class="${stock.return_3m >= 0 ? 'up' : 'down'}">${formatPercent(stock.return_3m)}</b></span><span>1개월 <b class="${stock.return_1m >= 0 ? 'up' : 'down'}">${formatPercent(stock.return_1m)}</b></span><span>%B ${safeNumber(stock.percent_b, 3)}</span>`;
+        button.append(name, mfi, stats);
+        button.addEventListener('click', () => selectStock(stock.code));
+        return button;
+      }));
+    }
+
+    function renderEvents(events) {
+      const list = $('#eventList');
+      if (!events.length) {
+        list.innerHTML = '<div class="empty">표시할 Trader 로그가 없습니다.</div>';
+        return;
+      }
+      list.replaceChildren(...events.slice().reverse().map((event) => {
+        const row = document.createElement('div');
+        row.className = 'event';
+        const time = document.createElement('span');
+        time.className = 'event-time';
+        time.textContent = event.timestamp.slice(11, 19);
+        const level = document.createElement('span');
+        level.className = `event-level ${event.level}`;
+        level.textContent = event.level;
+        const message = document.createElement('span');
+        message.className = 'event-message';
+        message.textContent = event.message;
+        row.append(time, level, message);
+        return row;
+      }));
+    }
+
+    function renderRuntime(runtime) {
+      const labels = { running: '실행 중', waiting: '대기 중', error: '오류', finished: '정상 종료', unknown: '상태 확인 불가' };
+      setText('#statusText', labels[runtime.status] || labels.unknown);
+      setText('#taskState', `스케줄러 ${runtime.task_state}`);
+      setText('#currentStep', runtime.current_step);
+      setText('#lastRun', `스케줄러 최근 실행 ${runtime.last_run || '--'}`);
+      const resultLabel = runtime.status === 'running' && runtime.last_result === 267009
+        ? '실행 중 (0x41301)' : (runtime.last_result ?? '--');
+      setText('#lastResult', `작업 결과 ${resultLabel}`);
+      const pulse = $('#statusPulse');
+      pulse.className = `pulse${runtime.status === 'error' ? ' error' : runtime.status === 'waiting' || runtime.status === 'finished' ? ' waiting' : ''}`;
+      const steps = $('#steps');
+      steps.replaceChildren(...runtime.steps.map((step) => {
+        const item = document.createElement('div');
+        item.className = `step ${step.state}`;
+        item.textContent = step.label;
+        return item;
+      }));
+    }
+
+    function renderDashboard(data) {
+      dashboardData = data;
+      setText('#analysisDate', data.analysis_date || '일봉 없음');
+      setText('#candidateCount', `${data.candidate_count}종목`);
+      setText('#selectedCount', `${data.selected_count}종목`);
+      setText('#updatedAt', data.updated_at.slice(11));
+      setText('#selectionCaption', `${data.market} · ${data.selected_count}개 신호`);
+      renderStocks(data.selected);
+      renderRuntime(data.runtime);
+      renderEvents(data.events);
+      if (!selectedCode || !data.selected.some((stock) => stock.code === selectedCode)) {
+        selectedCode = data.selected[0]?.code || null;
+        if (selectedCode) selectStock(selectedCode);
+        else clearChart();
+      } else if (chartData) {
+        renderChart(chartData);
+      }
+    }
+
+    function clearChart() {
+      chartData = null;
+      setText('#chartName', '선정 종목이 없습니다');
+      setText('#chartMeta', '');
+      const canvas = $('#priceChart');
+      const context = canvas.getContext('2d');
+      context.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    async function selectStock(code) {
+      selectedCode = code;
+      if (dashboardData) renderStocks(dashboardData.selected);
+      setText('#chartName', '차트 조회 중');
+      try {
+        chartData = await fetchJson(`/api/chart?code=${encodeURIComponent(code)}&days=${$('#chartDays').value}`);
+        renderChart(chartData);
+      } catch (error) {
+        setText('#chartName', '차트를 불러오지 못했습니다');
+        setText('#chartMeta', error.message);
+      }
+    }
+
+    function renderChart(payload) {
+      const { stock, bars } = payload;
+      if (!bars.length) return clearChart();
+      setText('#chartName', stock.company);
+      setText('#chartMeta', `${stock.code} · MFI ${safeNumber(stock.mfi10)} · %B ${safeNumber(stock.percent_b, 3)} · 기준 ${bars[bars.length - 1].date}`);
+      const canvas = $('#priceChart');
+      const bounds = canvas.getBoundingClientRect();
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = Math.max(1, Math.floor(bounds.width * ratio));
+      canvas.height = Math.max(1, Math.floor(bounds.height * ratio));
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      const width = bounds.width;
+      const height = bounds.height;
+      const left = 58, right = 16, top = 16, bottom = 34;
+      const volumeHeight = Math.max(42, height * .17);
+      const plotBottom = height - bottom - volumeHeight;
+      const plotHeight = plotBottom - top;
+      const values = bars.flatMap((bar) => [bar.close, bar.upper, bar.lower]).filter(Number.isFinite);
+      let minValue = Math.min(...values), maxValue = Math.max(...values);
+      const padding = Math.max((maxValue - minValue) * .09, maxValue * .005);
+      minValue -= padding; maxValue += padding;
+      const x = (index) => left + index * (width - left - right) / Math.max(1, bars.length - 1);
+      const y = (value) => top + (maxValue - value) * plotHeight / (maxValue - minValue);
+      ctx.clearRect(0, 0, width, height);
+      ctx.font = '10px Aptos, Malgun Gothic, sans-serif';
+      ctx.textBaseline = 'middle';
+      for (let line = 0; line <= 4; line += 1) {
+        const value = maxValue - (maxValue - minValue) * line / 4;
+        const py = top + plotHeight * line / 4;
+        ctx.strokeStyle = '#e8ede7'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(left, py); ctx.lineTo(width - right, py); ctx.stroke();
+        ctx.fillStyle = '#718078';
+        ctx.textAlign = 'right';
+        ctx.fillText(Math.round(value).toLocaleString('ko-KR'), left - 8, py);
+      }
+      const bandPoints = bars.map((bar, index) => ({ x: x(index), upper: bar.upper, lower: bar.lower })).filter((point) => Number.isFinite(point.upper) && Number.isFinite(point.lower));
+      if (bandPoints.length) {
+        ctx.beginPath();
+        bandPoints.forEach((point, index) => index ? ctx.lineTo(point.x, y(point.upper)) : ctx.moveTo(point.x, y(point.upper)));
+        bandPoints.slice().reverse().forEach((point) => ctx.lineTo(point.x, y(point.lower)));
+        ctx.closePath(); ctx.fillStyle = 'rgba(144, 180, 141, .16)'; ctx.fill();
+      }
+      function drawSeries(key, color, lineWidth, dash = []) {
+        ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = lineWidth; ctx.setLineDash(dash);
+        let started = false;
+        bars.forEach((bar, index) => {
+          if (!Number.isFinite(bar[key])) { started = false; return; }
+          if (!started) { ctx.moveTo(x(index), y(bar[key])); started = true; }
+          else ctx.lineTo(x(index), y(bar[key]));
+        });
+        ctx.stroke(); ctx.setLineDash([]);
+      }
+      drawSeries('upper', '#90b48d', 1.4);
+      drawSeries('lower', '#90b48d', 1.4);
+      drawSeries('middle', '#bd812e', 1.2, [4, 4]);
+      drawSeries('close', '#214b3a', 2.2);
+      const maxVolume = Math.max(...bars.map((bar) => bar.volume || 0), 1);
+      const barWidth = Math.max(1, (width - left - right) / bars.length * .58);
+      bars.forEach((bar, index) => {
+        const barHeight = (bar.volume || 0) / maxVolume * (volumeHeight - 7);
+        ctx.fillStyle = index && bar.close >= bars[index - 1].close ? '#c88170' : '#9bbda3';
+        ctx.fillRect(x(index) - barWidth / 2, plotBottom + volumeHeight - barHeight, barWidth, barHeight);
+      });
+      ctx.strokeStyle = '#dce4db'; ctx.beginPath();
+      ctx.moveTo(left, plotBottom + volumeHeight); ctx.lineTo(width - right, plotBottom + volumeHeight); ctx.stroke();
+      ctx.fillStyle = '#718078'; ctx.textAlign = 'left';
+      ctx.fillText(bars[0].date, left, height - 13);
+      ctx.textAlign = 'right'; ctx.fillText(bars[bars.length - 1].date, width - right, height - 13);
+      ctx.textAlign = 'left'; ctx.fillText('거래량', left, plotBottom + 10);
+    }
+
+    async function refresh(force = false) {
+      const button = $('#refreshButton');
+      button.disabled = true;
+      try {
+        const data = await fetchJson(`/api/dashboard${force ? '?refresh=1' : ''}`);
+        renderDashboard(data);
+      } catch (error) {
+        setText('#statusText', '데이터 연결 오류');
+        setText('#currentStep', error.message);
+        $('#statusPulse').className = 'pulse error';
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    $('#refreshButton').addEventListener('click', () => refresh(true));
+    $('#chartDays').addEventListener('change', () => selectedCode && selectStock(selectedCode));
+    window.addEventListener('resize', () => chartData && renderChart(chartData));
+    refresh();
+    refreshTimer = window.setInterval(() => refresh(false), 5000);
+  </script>
+</body>
+</html>

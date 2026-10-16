@@ -1,0 +1,15 @@
+2026-10-13 08:30:03 INFO DayTrading run started: analysis_date=2026-10-13
+2026-10-13 08:30:03 INFO KRX buy window: 08:30-09:30; current_time=2026-10-13T08:30:03 enabled=True
+2026-10-13 08:30:03 INFO Korean daily close collection started
+2026-10-13 08:30:12 INFO Korean daily close collection completed: 2026-04-15 to 2026-10-12
+2026-10-13 08:30:18 INFO Loaded Korean closes from DB: stocks=3908
+2026-10-13 08:30:18 INFO Overseas indicator close download started
+2026-10-13 08:30:25 INFO Overseas indicator download completed: rows=251 latest_date=2026-10-12
+2026-10-13 08:30:25 INFO Overseas indicator closes saved: rows=3514 tickers=34
+2026-10-13 08:30:27 INFO Correlation analysis completed: candidates=10 buy_signals=0
+2026-10-13 08:30:27 INFO Analysis produced no buy targets
+2026-10-13 08:30:27 INFO Correlation chart saved: C:\GitHub\StockAnalysisInPython\06_Trading_Strategy\results\daytrading_top10_correlation_20261013.png
+2026-10-13 08:30:27 INFO Analysis results saved to DB: analysis_date=2026-10-13 rows=10
+2026-10-13 08:30:27 INFO No live buy signals; no CREON order client initialized
+2026-10-13 08:30:27 INFO DayTrading live orders submitted: count=0
+2026-10-13 08:30:27 INFO Starting MFI position monitor through 18:00

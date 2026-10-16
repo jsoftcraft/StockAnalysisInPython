@@ -1,0 +1,40 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Optimize KOSPI trailing stops MFI 50",
+			"type": "shell",
+			"command": "C:\\GitHub\\zunseoya\\.venv-win32-py39\\Scripts\\python.exe",
+			"args": [
+				"C:\\GitHub\\StockAnalysisInPython\\06_Trading_Strategy\\BollingerBand_MFI10_TrailingStop_Optimizer.py",
+				"--market",
+				"KOSPI",
+				"--start",
+				"2026-09-15",
+				"--end",
+				"2026-10-08",
+				"--candidate-source",
+				"daily",
+				"--buy-mfi",
+				"50"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "DayTrading LIVE BUY (CREON)",
+			"type": "shell",
+			"command": "C:\\GitHub\\zunseoya\\.venv-win32-py39\\Scripts\\python.exe",
+			"args": [
+				"C:\\GitHub\\StockAnalysisInPython\\06_Trading_Strategy\\DayTrading_Trader.py",
+				"--live",
+				"--confirm",
+				"LIVE",
+				"--max-total-buy-amount",
+				"1000000"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	]
+}

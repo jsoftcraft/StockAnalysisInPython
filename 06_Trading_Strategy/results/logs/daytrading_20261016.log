@@ -1,0 +1,25 @@
+2026-10-16 08:30:04 INFO DayTrading run started: analysis_date=2026-10-16
+2026-10-16 08:30:04 INFO KRX buy window: 08:30-09:30; current_time=2026-10-16T08:30:04 enabled=True
+2026-10-16 08:30:04 INFO Korean daily close collection started
+2026-10-16 08:30:11 INFO Korean daily closes are already current
+2026-10-16 08:30:17 INFO Loaded Korean closes from DB: stocks=3913
+2026-10-16 08:30:17 INFO Overseas indicator close download started
+2026-10-16 08:30:23 INFO Overseas indicator download completed: rows=251 latest_date=2026-10-15
+2026-10-16 08:30:23 INFO Overseas indicator closes saved: rows=3514 tickers=34
+2026-10-16 08:30:25 INFO Correlation analysis completed: candidates=10 buy_signals=9
+2026-10-16 08:30:26 INFO Correlation chart saved: C:\GitHub\StockAnalysisInPython\06_Trading_Strategy\results\daytrading_top10_correlation_20261016.png
+2026-10-16 08:30:26 INFO Analysis results saved to DB: analysis_date=2026-10-16 rows=10
+2026-10-16 08:30:26 INFO CREON buy order submitted: code=143850 quantity=12 price=77170 session=PREOPEN_CLOSE order_no=23965
+2026-10-16 08:30:27 INFO CREON buy order submitted: code=453330 quantity=3 price=18170 session=PREOPEN_CLOSE order_no=23971
+2026-10-16 08:30:27 INFO Skipping 269540: budget cannot buy one share
+2026-10-16 08:30:27 INFO Skipping 219480: budget cannot buy one share
+2026-10-16 08:30:27 INFO Skipping 449780: budget cannot buy one share
+2026-10-16 08:30:27 INFO Skipping 449180: budget cannot buy one share
+2026-10-16 08:30:27 INFO Skipping 225040: budget cannot buy one share
+2026-10-16 08:30:27 INFO Skipping 448290: budget cannot buy one share
+2026-10-16 08:30:27 INFO Skipping 280930: budget cannot buy one share
+2026-10-16 08:30:27 INFO DayTrading live orders submitted: count=2
+2026-10-16 08:30:27 INFO Starting DayTrading position monitor through 20:00
+2026-10-16 09:00:03 ERROR DayTrading position monitor exited with code 1; DayTrading will remain active until 20:00
+2026-10-16 09:00:03 INFO DayTrading daemon remains active until 2026-10-16T20:00
+2026-10-16 20:00:00 INFO DayTrading after-market monitoring window ended

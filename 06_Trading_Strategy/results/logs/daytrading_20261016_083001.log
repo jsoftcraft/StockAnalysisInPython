@@ -1,0 +1,119 @@
+[2026-10-16  8:30:01.74] "DayTrading started in SCHEDULED LIVE mode."
+[2026-10-16  8:30:02.07] "Current local time: 0830; allowed window: 0830-0930."
+2026-10-16 08:30:04 INFO DayTrading run started: analysis_date=2026-10-16
+2026-10-16 08:30:04 INFO KRX buy window: 08:30-09:30; current_time=2026-10-16T08:30:04 enabled=True
+상관 분석 지표종목: SPY, QQQ, DIA, IWM, EFA, EEM, SOXX, XLE, TLT, UUP, GLD, SLV, USO, VIXY
+매수 신호 허용 시간: 오늘 08:30-09:30 (현재 08:30:04, 허용)
+1/5 KOSPI/KOSDAQ 누락 일봉 수집 시작
+2026-10-16 08:30:04 INFO Korean daily close collection started
+한국 종가가 최신 상태입니다.
+2026-10-16 08:30:11 INFO Korean daily closes are already current
+한국 종가 DB 로드: 3913종목 (2026-04-20~2026-10-15)
+2026-10-16 08:30:17 INFO Loaded Korean closes from DB: stocks=3913
+2/5 해외 지표 ETF 종가 다운로드
+2026-10-16 08:30:17 INFO Overseas indicator close download started
+해외 지표 CSV 갱신: C:\GitHub\StockAnalysisInPython\06_Trading_Strategy\data\해외지표종가.csv (251행, 최근 거래일 2026-10-15)
+2026-10-16 08:30:23 INFO Overseas indicator download completed: rows=251 latest_date=2026-10-15
+3/5 해외 지표 종가 DB 저장
+해외 지표 DB 적재 완료: 3514건, 34개 지표
+2026-10-16 08:30:23 INFO Overseas indicator closes saved: rows=3514 tickers=34
+4/5 지표별 상관 분석 및 TOP 10 선정
+
+당일매매 TOP 후보 (KRX 매수 신호 허용: 08:30-09:30)
+매도 기준: 수수료 등 비용 미반영 수익률 10:30 전 1.0%, 10:30 이후 0.3% 이상
+ 순위   종목코드                      종목명    시장 연관지표     상관도 매수신호   기준종가 추정수량                                                                                                                                                                               지표별 상관계수
+  1 143850      TIGER 미국S&P500선물(H) KOSPI  SPY  0.8417   가능 77,170   12 DIA=+0.6429; EEM=+0.5138; EFA=+0.5709; GLD=+0.2415; IWM=+0.6485; QQQ=+0.7708; SLV=+0.3623; SOXX=+0.4997; SPY=+0.8417; TLT=+0.2882; USO=-0.4222; UUP=-0.2815; VIXY=-0.6046; XLE=-0.1730
+  2 453330         RISE 미국S&P500(H) KOSPI  SPY  0.8417   가능 18,170   55 DIA=+0.6453; EEM=+0.5066; EFA=+0.5608; GLD=+0.2554; IWM=+0.6506; QQQ=+0.7695; SLV=+0.3731; SOXX=+0.4970; SPY=+0.8417; TLT=+0.2865; USO=-0.4201; UUP=-0.2875; VIXY=-0.6088; XLE=-0.1790
+  3 269540         PLUS 미국S&P500(H) KOSPI  SPY  0.8367   가능 30,005   33 DIA=+0.6380; EEM=+0.4912; EFA=+0.5689; GLD=+0.2408; IWM=+0.6447; QQQ=+0.7626; SLV=+0.3698; SOXX=+0.4958; SPY=+0.8367; TLT=+0.2949; USO=-0.4127; UUP=-0.2709; VIXY=-0.6018; XLE=-0.1413
+  4 219480      KODEX 미국S&P500선물(H) KOSPI  SPY  0.8357   가능 33,125   30 DIA=+0.6400; EEM=+0.4964; EFA=+0.5605; GLD=+0.2442; IWM=+0.6402; QQQ=+0.7611; SLV=+0.3678; SOXX=+0.4803; SPY=+0.8357; TLT=+0.2754; USO=-0.4178; UUP=-0.2815; VIXY=-0.5979; XLE=-0.1731
+  5 449780       KIWOOM 미국S&P500(H) KOSPI  SPY  0.8323   가능 18,660   53 DIA=+0.6405; EEM=+0.4893; EFA=+0.5697; GLD=+0.2539; IWM=+0.6402; QQQ=+0.7510; SLV=+0.3739; SOXX=+0.4775; SPY=+0.8323; TLT=+0.2784; USO=-0.4045; UUP=-0.2944; VIXY=-0.6098; XLE=-0.1444
+  6 449180        KODEX 미국S&P500(H) KOSPI  SPY  0.8317   가능 17,185   58 DIA=+0.6419; EEM=+0.4902; EFA=+0.5609; GLD=+0.2363; IWM=+0.6372; QQQ=+0.7525; SLV=+0.3543; SOXX=+0.4817; SPY=+0.8317; TLT=+0.2784; USO=-0.4095; UUP=-0.2964; VIXY=-0.6211; XLE=-0.1634
+  7 225040 TIGER 미국S&P500레버리지(합성 H) KOSPI  SPY  0.8316   가능 67,405   14 DIA=+0.6297; EEM=+0.4869; EFA=+0.5531; GLD=+0.2342; IWM=+0.6347; QQQ=+0.7599; SLV=+0.3558; SOXX=+0.4876; SPY=+0.8316; TLT=+0.2771; USO=-0.4057; UUP=-0.2913; VIXY=-0.6003; XLE=-0.1656
+  8 448290        TIGER 미국S&P500(H) KOSPI  SPY  0.8308   가능 17,795   56 DIA=+0.6366; EEM=+0.4843; EFA=+0.5607; GLD=+0.2300; IWM=+0.6319; QQQ=+0.7560; SLV=+0.3480; SOXX=+0.4846; SPY=+0.8308; TLT=+0.2771; USO=-0.4060; UUP=-0.2896; VIXY=-0.5975; XLE=-0.1570
+  9 225030   TIGER 미국S&P500선물인버스(H) KOSPI  SPY -0.8171   대기  2,270    0 DIA=-0.6360; EEM=-0.4905; EFA=-0.5966; GLD=-0.2952; IWM=-0.6275; QQQ=-0.7370; SLV=-0.4112; SOXX=-0.4470; SPY=-0.8171; TLT=-0.2762; USO=+0.4175; UUP=+0.3552; VIXY=+0.5813; XLE=+0.2191
+ 10 280930        KODEX 미국러셀2000(H) KOSPI  IWM  0.8050   가능 15,425   64 DIA=+0.5224; EEM=+0.5326; EFA=+0.5420; GLD=+0.3603; IWM=+0.8050; QQQ=+0.6224; SLV=+0.4514; SOXX=+0.4708; SPY=+0.6442; TLT=+0.2766; USO=-0.3391; UUP=-0.2536; VIXY=-0.4934; XLE=-0.1619
+2026-10-16 08:30:25 INFO Correlation analysis completed: candidates=10 buy_signals=9
+5/5 TOP 10 상관 그래프 저장: C:\GitHub\StockAnalysisInPython\06_Trading_Strategy\results\daytrading_top10_correlation_20261016.png
+2026-10-16 08:30:26 INFO Correlation chart saved: C:\GitHub\StockAnalysisInPython\06_Trading_Strategy\results\daytrading_top10_correlation_20261016.png
+ rank   code market                  company indicator  correlation                                                                                                                                                                 indicator_correlations  observations indicator_trade_date  indicator_return  buy_signal  max_buy_amount_krw  reference_close  estimated_buy_quantity
+    1 143850  KOSPI      TIGER 미국S&P500선물(H)       SPY     0.841708 DIA=+0.6429; EEM=+0.5138; EFA=+0.5709; GLD=+0.2415; IWM=+0.6485; QQQ=+0.7708; SLV=+0.3623; SOXX=+0.4997; SPY=+0.8417; TLT=+0.2882; USO=-0.4222; UUP=-0.2815; VIXY=-0.6046; XLE=-0.1730            58           2026-10-15          0.002846        True             1000000            77170                      12
+    2 453330  KOSPI         RISE 미국S&P500(H)       SPY     0.841653 DIA=+0.6453; EEM=+0.5066; EFA=+0.5608; GLD=+0.2554; IWM=+0.6506; QQQ=+0.7695; SLV=+0.3731; SOXX=+0.4970; SPY=+0.8417; TLT=+0.2865; USO=-0.4201; UUP=-0.2875; VIXY=-0.6088; XLE=-0.1790            58           2026-10-15          0.002846        True             1000000            18170                      55
+    3 269540  KOSPI         PLUS 미국S&P500(H)       SPY     0.836741 DIA=+0.6380; EEM=+0.4912; EFA=+0.5689; GLD=+0.2408; IWM=+0.6447; QQQ=+0.7626; SLV=+0.3698; SOXX=+0.4958; SPY=+0.8367; TLT=+0.2949; USO=-0.4127; UUP=-0.2709; VIXY=-0.6018; XLE=-0.1413            58           2026-10-15          0.002846        True             1000000            30005                      33
+    4 219480  KOSPI      KODEX 미국S&P500선물(H)       SPY     0.835722 DIA=+0.6400; EEM=+0.4964; EFA=+0.5605; GLD=+0.2442; IWM=+0.6402; QQQ=+0.7611; SLV=+0.3678; SOXX=+0.4803; SPY=+0.8357; TLT=+0.2754; USO=-0.4178; UUP=-0.2815; VIXY=-0.5979; XLE=-0.1731            58           2026-10-15          0.002846        True             1000000            33125                      30
+    5 449780  KOSPI       KIWOOM 미국S&P500(H)       SPY     0.832267 DIA=+0.6405; EEM=+0.4893; EFA=+0.5697; GLD=+0.2539; IWM=+0.6402; QQQ=+0.7510; SLV=+0.3739; SOXX=+0.4775; SPY=+0.8323; TLT=+0.2784; USO=-0.4045; UUP=-0.2944; VIXY=-0.6098; XLE=-0.1444            58           2026-10-15          0.002846        True             1000000            18660                      53
+    6 449180  KOSPI        KODEX 미국S&P500(H)       SPY     0.831688 DIA=+0.6419; EEM=+0.4902; EFA=+0.5609; GLD=+0.2363; IWM=+0.6372; QQQ=+0.7525; SLV=+0.3543; SOXX=+0.4817; SPY=+0.8317; TLT=+0.2784; USO=-0.4095; UUP=-0.2964; VIXY=-0.6211; XLE=-0.1634            58           2026-10-15          0.002846        True             1000000            17185                      58
+    7 225040  KOSPI TIGER 미국S&P500레버리지(합성 H)       SPY     0.831606 DIA=+0.6297; EEM=+0.4869; EFA=+0.5531; GLD=+0.2342; IWM=+0.6347; QQQ=+0.7599; SLV=+0.3558; SOXX=+0.4876; SPY=+0.8316; TLT=+0.2771; USO=-0.4057; UUP=-0.2913; VIXY=-0.6003; XLE=-0.1656            58           2026-10-15          0.002846        True             1000000            67405                      14
+    8 448290  KOSPI        TIGER 미국S&P500(H)       SPY     0.830790 DIA=+0.6366; EEM=+0.4843; EFA=+0.5607; GLD=+0.2300; IWM=+0.6319; QQQ=+0.7560; SLV=+0.3480; SOXX=+0.4846; SPY=+0.8308; TLT=+0.2771; USO=-0.4060; UUP=-0.2896; VIXY=-0.5975; XLE=-0.1570            58           2026-10-15          0.002846        True             1000000            17795                      56
+    9 225030  KOSPI   TIGER 미국S&P500선물인버스(H)       SPY    -0.817087 DIA=-0.6360; EEM=-0.4905; EFA=-0.5966; GLD=-0.2952; IWM=-0.6275; QQQ=-0.7370; SLV=-0.4112; SOXX=-0.4470; SPY=-0.8171; TLT=-0.2762; USO=+0.4175; UUP=+0.3552; VIXY=+0.5813; XLE=+0.2191            58           2026-10-15          0.002846       False             1000000             2270                       0
+   10 280930  KOSPI        KODEX 미국러셀2000(H)       IWM     0.804974 DIA=+0.5224; EEM=+0.5326; EFA=+0.5420; GLD=+0.3603; IWM=+0.8050; QQQ=+0.6224; SLV=+0.4514; SOXX=+0.4708; SPY=+0.6442; TLT=+0.2766; USO=-0.3391; UUP=-0.2536; VIXY=-0.4934; XLE=-0.1619            58           2026-10-15          0.013671        True             1000000            15425                      64
+2026-10-16 분석 결과 10건을 DB에 저장했습니다.
+2026-10-16 08:30:26 INFO Analysis results saved to DB: analysis_date=2026-10-16 rows=10
+CREON 매수 주문 접수: TIGER 미국S&P500선물(H) (143850) 12주, 기준 가격 77,170원, 세션 PREOPEN_CLOSE, 주문번호 23965 (체결 미확인)
+2026-10-16 08:30:26 INFO CREON buy order submitted: code=143850 quantity=12 price=77170 session=PREOPEN_CLOSE order_no=23965
+CREON 매수 주문 접수: RISE 미국S&P500(H) (453330) 3주, 기준 가격 18,170원, 세션 PREOPEN_CLOSE, 주문번호 23971 (체결 미확인)
+2026-10-16 08:30:27 INFO CREON buy order submitted: code=453330 quantity=3 price=18170 session=PREOPEN_CLOSE order_no=23971
+2026-10-16 08:30:27 INFO Skipping 269540: budget cannot buy one share
+2026-10-16 08:30:27 INFO Skipping 219480: budget cannot buy one share
+2026-10-16 08:30:27 INFO Skipping 449780: budget cannot buy one share
+2026-10-16 08:30:27 INFO Skipping 449180: budget cannot buy one share
+2026-10-16 08:30:27 INFO Skipping 225040: budget cannot buy one share
+2026-10-16 08:30:27 INFO Skipping 448290: budget cannot buy one share
+2026-10-16 08:30:27 INFO Skipping 280930: budget cannot buy one share
+CREON 매수 주문 접수 건수: 2
+2026-10-16 08:30:27 INFO DayTrading live orders submitted: count=2
+2026-10-16 08:30:27 INFO Starting DayTrading position monitor through 20:00
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시작(2026-10-16 09:00)까지 대기합니다. 중단하려면 Ctrl+C를 누르세요.
+거래 감시 시간입니다. Trader를 시작합니다.
+Traceback (most recent call last):
+  File "<string>", line 103, in <module>
+  File "C:\GitHub\StockAnalysisInPython\06_Trading_Strategy\BollingerBand_MFI10_Trader.py", line 1485, in main
+    raise RuntimeError(
+RuntimeError: TIGER 미국S&P500선물인버스(H) (225030) 계좌 잔고 328주와 저장된 Trader 수량 440주가 다릅니다.
+KOSPI 후보 10종목 중 전략 선정 0종목 | 모드: DayTrading 감시 전용 | 종목별 한도: 1,000,000원
+매수: 신규 매수 없음 | 매도: 예상 왕복 비용 0.50% 차감 후 10:30 전 1.00%, 10:30 이후 0.30% 이상
+  선정  종목명                      코드       3M       1M   MFI10     %B     MFI Δ3
+----------------------------------------------------------------------
+   -  PLUS 미국S&P500(H)     269540   +0.3%   +0.5%   57.77   0.40     +31.86
+   -  TIGER 미국S&P500선물인버스( 225030   -0.9%   +0.4%   54.64   0.70     +15.15
+   -  KODEX 미국S&P500선물(H)  219480   +2.0%   +0.4%   56.89   0.41      +8.92
+   -  TIGER 미국S&P500선물(H)  143850   +1.2%   +0.2%   47.50   0.37      +7.51
+   -  RISE 미국S&P500(H)     453330   +2.1%   +0.4%   52.12   0.42      +0.48
+   -  KODEX 미국S&P500(H)    449180   +2.1%   +0.5%   62.45   0.44      -2.44
+   -  TIGER 미국S&P500(H)    448290   +1.8%   +0.5%   63.12   0.43     +19.24
+   -  KODEX 미국러셀2000(H)    280930   -8.9%   -6.8%   21.68  -0.10      -3.66
+   -  KIWOOM 미국S&P500(H)   449780   +1.5%   +0.5%   48.50   0.41      -4.47
+   -  TIGER 미국S&P500레버리지(합 225040   +2.9%   +0.3%   53.70   0.39      -9.54
+----------------------------------------------------------------------
+2026-10-16 09:00:03 ERROR DayTrading position monitor exited with code 1; DayTrading will remain active until 20:00
+2026-10-16 09:00:03 INFO DayTrading daemon remains active until 2026-10-16T20:00
+2026-10-16 20:00:00 INFO DayTrading after-market monitoring window ended
+[2026-10-16 20:00:00.16] "DayTrading process exited with code 0."

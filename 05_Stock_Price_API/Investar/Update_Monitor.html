@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>주가 데이터 수집 모니터</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172d31;
+      --muted: #687b7b;
+      --line: #d5dfda;
+      --paper: #f1f5f1;
+      --panel: #fff;
+      --green: #28796c;
+      --mint: #e4f1eb;
+      --amber: #e7bb4f;
+      --red: #b84e42;
+      --navy: #17343a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+      font-size: 13px;
+    }
+    header {
+      min-height: 78px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 14px max(24px, calc((100vw - 1440px) / 2));
+      color: #f5f5ed;
+      background: var(--navy);
+      border-bottom: 4px solid var(--amber);
+    }
+    .brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+    .brand-mark {
+      width: 44px; height: 44px; display: grid; place-items: center;
+      color: var(--navy); background: var(--amber); font-weight: 900;
+      font-size: 16px; flex: 0 0 auto;
+    }
+    .eyebrow { color: #b7c9c3; font-size: 10px; text-transform: uppercase; }
+    h1 { margin: 3px 0 0; font-family: Georgia, "Malgun Gothic", serif; font-size: 23px; }
+    .header-actions { display: flex; align-items: center; gap: 16px; }
+    .task-status { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: #aaa; }
+    .dot.running { background: var(--amber); box-shadow: 0 0 0 4px #e7bb4f25; }
+    .dot.finished { background: #73b99d; }
+    .dot.error { background: #e47f70; }
+    button {
+      min-height: 36px; padding: 0 13px; color: #f7f7f0; background: transparent;
+      border: 1px solid #72888a; border-radius: 3px; font: inherit; cursor: pointer;
+    }
+    button:hover { background: #28464b; }
+    main { max-width: 1440px; margin: 0 auto; padding: 15px 22px 20px; }
+    .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    .metric, .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 5px; }
+    .metric { min-height: 84px; padding: 13px 16px; }
+    .metric-label { color: var(--muted); font-size: 11px; }
+    .metric-value { margin-top: 8px; font-size: 21px; font-weight: 760; }
+    .metric-note { margin-top: 3px; color: var(--muted); font-size: 10px; }
+    .layout { display: grid; grid-template-columns: minmax(0, 0.93fr) minmax(0, 1.07fr); gap: 14px; margin-top: 14px; }
+    .panel { min-width: 0; overflow: hidden; }
+    .panel-head { min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; border-bottom: 1px solid var(--line); }
+    h2 { margin: 0; font-size: 15px; }
+    .muted { color: var(--muted); font-size: 11px; }
+    .progress-body { padding: 15px 16px 13px; }
+    .current-step { min-height: 44px; padding: 12px; background: #f1f5f1; border-left: 3px solid var(--amber); font-weight: 650; }
+    .bar-track { height: 7px; margin: 13px 0 7px; overflow: hidden; background: #e6ece8; border-radius: 5px; }
+    .bar-fill { height: 100%; width: 0; background: var(--green); transition: width .35s ease; }
+    .progress-meta { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 11px; }
+    .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+    .step { min-height: 48px; padding: 8px 9px; color: var(--muted); border-top: 3px solid #d7dfdb; font-size: 11px; }
+    .step.done { color: var(--green); border-color: var(--green); }
+    .step.active { color: var(--ink); border-color: var(--amber); font-weight: 700; }
+    .step.monitor { color: #677b76; border-color: #9bb8ad; }
+    .task-meta { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 11px; color: var(--muted); font-size: 10px; }
+    .coverage { padding-bottom: 8px; }
+    .coverage-section { padding: 12px 15px 6px; }
+    .coverage-title { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 7px; }
+    .coverage-title strong { font-size: 12px; }
+    .coverage-title span { color: var(--muted); font-size: 10px; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th, td { padding: 7px 8px; border-bottom: 1px solid #edf0ed; text-align: right; white-space: nowrap; }
+    th { color: var(--muted); font-size: 10px; font-weight: 600; }
+    th:first-child, td:first-child { text-align: left; }
+    .log-panel { margin-top: 14px; }
+    .log-path { max-width: 55%; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .log-list { height: 190px; padding: 4px 15px; overflow: auto; }
+    .log-line { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 7px 0; border-bottom: 1px solid #edf0ed; font-family: Consolas, "Malgun Gothic", monospace; font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+    .log-line.error { color: var(--red); }
+    .log-line.progress { color: var(--green); }
+    .log-kind { color: var(--muted); font-family: "Malgun Gothic", sans-serif; font-size: 10px; white-space: nowrap; }
+    .footnote { margin: 10px 3px 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+    .error-banner { display: none; margin: 12px 0 0; padding: 10px 12px; color: #8b362e; background: #f9e9e5; border-left: 3px solid var(--red); }
+    @media (max-width: 900px) {
+      header { padding-inline: 18px; }
+      main { padding-inline: 14px; }
+      .layout { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 620px) {
+      header { min-height: 70px; padding: 10px 12px; }
+      .brand { gap: 9px; }
+      .brand-mark { width: 38px; height: 38px; }
+      h1 { font-size: 18px; }
+      .eyebrow { font-size: 8px; }
+      .header-actions { gap: 8px; }
+      button { min-height: 34px; padding-inline: 9px; font-size: 11px; }
+      main { padding: 10px 9px 16px; }
+      .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      .metric { min-height: 75px; padding: 10px; }
+      .metric-value { font-size: 18px; }
+      .layout { gap: 9px; margin-top: 9px; }
+      .panel-head { min-height: 46px; padding-inline: 11px; }
+      .progress-body { padding: 11px; }
+      .steps { gap: 6px; }
+      .step { padding-inline: 6px; font-size: 10px; }
+      .coverage-section { padding-inline: 8px; }
+      th, td { padding: 6px 4px; font-size: 10px; }
+      .log-panel { margin-top: 9px; }
+      .log-list { height: 230px; padding-inline: 9px; }
+      .log-path { max-width: 48%; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="brand-mark">UP</div>
+      <div><div class="eyebrow">KRX · DATA COLLECTION</div><h1>주가 데이터 수집 모니터</h1></div>
+    </div>
+    <div class="header-actions">
+      <div class="task-status"><i id="statusDot" class="dot"></i><span id="statusLabel">상태 조회 중</span></div>
+      <button id="refreshButton" type="button">새로고침</button>
+    </div>
+  </header>
+  <main>
+    <section class="metrics" aria-label="수집 요약">
+      <div class="metric"><div class="metric-label">작업 스케줄러</div><div class="metric-value" id="taskState">--</div><div class="metric-note" id="taskRun">최근 실행 --</div></div>
+      <div class="metric"><div class="metric-label">KOSPI 후보</div><div class="metric-value" id="candidateCount">--</div><div class="metric-note" id="candidateUpdated">기준일 --</div></div>
+      <div class="metric"><div class="metric-label">최신 일봉</div><div class="metric-value" id="dailyDate">--</div><div class="metric-note" id="dailyCoverage">--</div></div>
+      <div class="metric"><div class="metric-label">최신 분봉</div><div class="metric-value" id="minuteDate">--</div><div class="metric-note" id="minuteCoverage">--</div></div>
+    </section>
+    <div id="errorBanner" class="error-banner"></div>
+    <section class="layout">
+      <section class="panel">
+        <div class="panel-head"><h2>실행 절차</h2><span class="muted" id="progressLabel">작업 확인 중</span></div>
+        <div class="progress-body">
+          <div class="current-step" id="currentStep">작업 및 로그 상태를 확인하고 있습니다.</div>
+          <div class="bar-track"><div class="bar-fill" id="progressBar"></div></div>
+          <div class="progress-meta"><span id="progressCount">로그 진행률 확인 중</span><span id="progressPercent">--</span></div>
+          <div class="steps" id="steps"></div>
+          <div class="task-meta"><span id="nextRun">다음 실행 --</span><span id="lastResult">작업 결과 --</span></div>
+        </div>
+      </section>
+      <section class="panel coverage">
+        <div class="panel-head"><h2>데이터 수집 현황</h2><span class="muted" id="updatedAt">조회 시각 --</span></div>
+        <div class="coverage-section">
+          <div class="coverage-title"><strong>일봉 최근 거래일</strong><span>daily_price · 최신일 종목/행 수</span></div>
+          <table><thead><tr><th>기준일</th><th>종목</th><th>가격 행</th></tr></thead><tbody id="dailyRows"></tbody></table>
+        </div>
+        <div class="coverage-section">
+          <div class="coverage-title"><strong>분봉 최근 저장일</strong><span>minute_price · 최근 5개 저장일</span></div>
+          <table><thead><tr><th>기준일</th><th>종목</th><th>분봉 행</th><th>마지막 시각</th></tr></thead><tbody id="minuteRows"></tbody></table>
+        </div>
+      </section>
+    </section>
+    <section class="panel log-panel">
+      <div class="panel-head"><h2>실행 로그</h2><span class="log-path" id="logPath" title=""></span></div>
+      <div class="log-list" id="logList"></div>
+    </section>
+    <p class="footnote">후보 분석과 일봉 갱신은 StockAnalysisInPython-01-Update 작업을 표시합니다. 해당 배치는 분봉을 수집하지 않으며, 분봉 표시는 DB의 최신 저장 현황입니다. 이 페이지는 조회 전용입니다.</p>
+  </main>
+  <script>
+    const numberFormat = new Intl.NumberFormat('ko-KR');
+    const labels = { running: '실행 중', waiting: '대기 중', finished: '완료', error: '오류', unknown: '상태 미확인' };
+    const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+    const formatCount = (value) => numberFormat.format(value ?? 0);
+    const setText = (id, value) => { document.getElementById(id).textContent = value ?? '--'; };
+    function renderRows(id, rows, minute = false) {
+      const body = document.getElementById(id);
+      if (!rows.length) {
+        body.innerHTML = `<tr><td colspan="${minute ? 4 : 3}">저장 데이터가 없습니다.</td></tr>`;
+        return;
+      }
+      body.innerHTML = rows.map((row) => minute
+        ? `<tr><td>${escapeHtml(row.date)}</td><td>${formatCount(row.stocks)}</td><td>${formatCount(row.rows)}</td><td>${escapeHtml(row.last_time || '--')}</td></tr>`
+        : `<tr><td>${escapeHtml(row.date)}</td><td>${formatCount(row.stocks)}</td><td>${formatCount(row.rows)}</td></tr>`).join('');
+    }
+    function render(data) {
+      const runtime = data.runtime || {};
+      const state = runtime.status || 'unknown';
+      document.getElementById('statusDot').className = `dot ${state}`;
+      setText('statusLabel', labels[state] || labels.unknown);
+      setText('taskState', runtime.task_state || '--');
+      setText('taskRun', `최근 실행 ${runtime.last_run || '--'}`);
+      setText('candidateCount', `${formatCount(data.candidates?.count)}종목`);
+      setText('candidateUpdated', `갱신 ${data.candidates?.updated_at || '--'} · 이력 ${formatCount(data.candidates?.snapshot_days)}일`);
+      setText('dailyDate', data.daily?.date || '--');
+      setText('dailyCoverage', `${formatCount(data.daily?.stocks)}종목 · ${formatCount(data.daily?.rows)}행`);
+      const latestMinute = data.minute_days?.[0];
+      setText('minuteDate', latestMinute?.date || '--');
+      setText('minuteCoverage', latestMinute ? `${formatCount(latestMinute.stocks)}종목 · ${formatCount(latestMinute.rows)}행` : '저장 데이터 없음');
+      setText('currentStep', runtime.current_step || '실행 상태 확인 중');
+      setText('progressLabel', labels[state] || '상태 확인 중');
+      const percent = runtime.percent;
+      document.getElementById('progressBar').style.width = `${percent ?? 0}%`;
+      setText('progressCount', runtime.current != null && runtime.total != null
+        ? `${formatCount(runtime.current)} / ${formatCount(runtime.total)} 종목`
+        : (runtime.phase === 'daily' ? '일봉 종목별 로그 갱신 대기' : '단계 진행률 로그 대기'));
+      setText('progressPercent', percent == null ? '--' : `${percent}%`);
+      setText('nextRun', `다음 실행 ${runtime.next_run || '--'}`);
+      setText('lastResult', `작업 결과 ${state === 'running' ? '실행 중' : (runtime.last_result ?? '--')}`);
+      document.getElementById('steps').innerHTML = (runtime.steps || []).map((step) =>
+        `<div class="step ${escapeHtml(step.state)}">${escapeHtml(step.label)}</div>`).join('');
+      setText('updatedAt', `조회 ${data.updated_at || '--'}`);
+      renderRows('dailyRows', data.daily?.date ? [data.daily] : []);
+      renderRows('minuteRows', (data.minute_days || []).slice(0, 5), true);
+      const logList = document.getElementById('logList');
+      logList.innerHTML = (data.events || []).map((line) => {
+        const kind = /실패|error|traceback/i.test(line) ? 'error' : (/조회 \d+\s*\//.test(line) ? 'progress' : '');
+        const label = kind === 'error' ? 'ERROR' : kind === 'progress' ? '진행' : 'INFO';
+        return `<div class="log-line ${kind}"><span>${escapeHtml(line)}</span><span class="log-kind">${label}</span></div>`;
+      }).join('') || '<div class="log-line"><span>표시할 로그가 없습니다.</span></div>';
+      setText('logPath', data.log_path || '로그 경로 확인 불가');
+      document.getElementById('logPath').title = data.log_path || '';
+      const errors = data.errors || [];
+      const banner = document.getElementById('errorBanner');
+      banner.textContent = errors.join(' · ');
+      banner.style.display = errors.length ? 'block' : 'none';
+    }
+    async function refresh() {
+      const button = document.getElementById('refreshButton');
+      button.disabled = true;
+      try {
+        const response = await fetch('/api/dashboard', { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        render(await response.json());
+      } catch (error) {
+        const banner = document.getElementById('errorBanner');
+        banner.textContent = `모니터 데이터를 불러오지 못했습니다: ${error.message}`;
+        banner.style.display = 'block';
+      } finally {
+        button.disabled = false;
+      }
+    }
+    document.getElementById('refreshButton').addEventListener('click', refresh);
+    refresh();
+    window.setInterval(refresh, 5000);
+  </script>
+</body>
+</html>
