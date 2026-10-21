@@ -17,9 +17,9 @@ import pymysql
 
 
 TASK_NAME = 'StockAnalysisInPython-01-Update'
-ONEDRIVE = Path(os.environ.get('OneDrive') or Path.home() / 'OneDrive')
+DEFAULT_LOG_PATH = Path.home() / 'Desktop' / 'StockAnalysis_Update.log'
 LOG_PATH = Path(os.environ.get(
-    'STOCK_UPDATE_LOG', str(ONEDRIVE / 'Desktop' / 'StockAnalysis_Update.log')
+    'STOCK_UPDATE_LOG', str(DEFAULT_LOG_PATH)
 ))
 HTML_PATH = Path(__file__).with_name('Update_Monitor.html')
 LOG_LIMIT = 3000

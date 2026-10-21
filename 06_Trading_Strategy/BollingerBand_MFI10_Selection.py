@@ -77,6 +77,23 @@ def load_candidate_snapshots(connection, market, start_date, end_date):
     return snapshots, company_names, latest_update
 
 
+def selection_filter_conditions(indicators, min_average_turnover=MIN_AVERAGE_TURNOVER):
+    return {
+        '종가>MA20': indicators['close'] > indicators['ma20'],
+        'MA20>MA60': indicators['ma20'] > indicators['ma60'],
+        'MA20 5일 변화율>0': indicators['ma20_change_5'] > 0,
+        '3개월 수익률>0': indicators['return_3m'] > 0,
+        f'20일 평균 거래대금>={min_average_turnover:,.0f}원': (
+            indicators['average_turnover_20'] >= min_average_turnover
+        ),
+        'MFI10>=40': indicators['mfi10'] >= 40,
+        'MFI10<=80': indicators['mfi10'] <= 80,
+        'MFI 3일 변화량>0': indicators['mfi_change_3'] > 0,
+        '%B>=0.5': indicators['percent_b'] >= 0.5,
+        '%B<=1.2': indicators['percent_b'] <= 1.2,
+    }
+
+
 def rank_daily_top_stocks(
     histories,
     limit=TOP_STOCK_COUNT,
@@ -102,18 +119,12 @@ def rank_daily_top_stocks(
     }
     prior = {column: values.shift(lag) for column, values in matrices.items()}
 
-    eligible = (
-        (prior['close'] > prior['ma20'])
-        & (prior['ma20'] > prior['ma60'])
-        & (prior['ma20_change_5'] > 0)
-        & (prior['return_3m'] > 0)
-        & (prior['average_turnover_20'] >= min_average_turnover)
-        & prior['mfi10'].ge(40)
-        & prior['mfi10'].le(80)
-        & (prior['mfi_change_3'] > 0)
-        & prior['percent_b'].ge(0.5)
-        & prior['percent_b'].le(1.2)
+    conditions = list(
+        selection_filter_conditions(prior, min_average_turnover).values()
     )
+    eligible = conditions[0]
+    for condition in conditions[1:]:
+        eligible = eligible & condition
 
     close_prices = matrices['close']
     prior_returns = close_prices.pct_change().shift(lag)

@@ -20,11 +20,13 @@ from typing import Optional
 
 import pandas as pd
 import pymysql
+from BollingerBand_MFI10_Data import DailyPriceSynchronizer
 from BollingerBand_MFI10_Selection import (
     TOP_STOCK_COUNT,
     TRAILING_STOP_RATE,
     prepare_selection_indicators,
     rank_daily_top_stocks,
+    selection_filter_conditions,
 )
 
 
@@ -51,6 +53,7 @@ ORDER_COOLDOWN_SECONDS = 3
 FILL_CHECK_ATTEMPTS = 5
 FILL_CHECK_INTERVAL = 0.5
 POSITION_PAGE_SIZE = 50
+DECISION_LOG_INTERVAL_SECONDS = 300
 
 
 class TraderAlreadyRunningError(RuntimeError):
@@ -133,6 +136,11 @@ class Candidate:
     percent_b: float
     average_turnover: float
     selected: bool
+    data_date: Optional[date] = None
+    required_date: Optional[date] = None
+    history_rows: int = 0
+    data_issues: tuple[str, ...] = ()
+    selection_reasons: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -222,7 +230,34 @@ def load_company_names(connection, codes):
         }
 
 
-def load_kospi_candidates(connection, extra_codes=None):
+def daily_indicator_issues(indicators, required_date, expected_dates):
+    if indicators is None or indicators.empty:
+        return ('일봉 없음',)
+    data_date = indicators.index[-1].date()
+    issues = []
+    if data_date != required_date:
+        issues.append(f'오래된 일봉 {data_date} (기준 {required_date})')
+    if len(indicators) < 64:
+        issues.append(f'일봉 이력 부족 {len(indicators)}/64')
+    stored_dates = set(indicators.index.date)
+    missing_count = sum(
+        day >= indicators.index[0].date() and day not in stored_dates
+        for day in expected_dates
+    )
+    if missing_count:
+        issues.append(f'누락 일봉 {missing_count}거래일')
+    latest = indicators.iloc[-1]
+    if not all(math.isfinite(float(latest[column])) for column in (
+        'ma20', 'mfi10', 'mfi_change_3', 'return_1m', 'return_3m',
+        'percent_b', 'average_turnover_20', 'band_width_change_5',
+    )):
+        issues.append('유효하지 않은 일봉 지표')
+    return tuple(issues)
+
+
+def load_kospi_candidates(
+    connection, extra_codes=None, expected_date=None, expected_dates=(),
+):
     with connection.cursor() as cursor:
         cursor.execute(
             'SELECT code, company FROM selected_stock '
@@ -292,25 +327,55 @@ def load_kospi_candidates(connection, extra_codes=None):
     pool_histories = {
         code: histories[code] for code in pool_codes if code in histories
     }
-    membership = rank_daily_top_stocks(
-        pool_histories, limit=STOCK_COUNT, lag=0
-    )
-    latest_date = max(
-        (prices.index.max() for prices in histories.values()),
+    latest_date = expected_date or max(
+        (prices.index.max().date() for prices in pool_histories.values()),
         default=None,
+    )
+    quality_issues = {
+        code: daily_indicator_issues(
+            histories.get(code), latest_date, expected_dates
+        )
+        for code in candidate_codes
+    }
+    membership = rank_daily_top_stocks(
+        {
+            code: prices for code, prices in pool_histories.items()
+            if not quality_issues[code]
+        },
+        limit=STOCK_COUNT, lag=0,
     )
     candidates = []
     for code in candidate_codes:
         indicators = histories.get(code)
         if indicators is None or indicators.empty:
+            candidates.append(Candidate(
+                code=code, company=candidate_names[code],
+                ma20=float('nan'), mfi10=float('nan'),
+                mfi_change=float('nan'), return_1m=float('nan'),
+                return_3m=float('nan'), percent_b=float('nan'),
+                average_turnover=float('nan'), selected=False,
+                required_date=latest_date,
+                data_issues=('일봉 없음',),
+                selection_reasons=('일봉 없음',),
+            ))
             continue
         latest = indicators.iloc[-1]
+        data_date = indicators.index[-1].date()
+        data_issues = quality_issues[code]
+        selection_reasons = list(data_issues) + [
+            f'{condition} 불충족'
+            for condition, passed in selection_filter_conditions(latest).items()
+            if not passed
+        ]
+        if code not in pool_codes:
+            selection_reasons.append('선정 후보군 외 보유/감시 종목')
         selected = (
-            len(indicators) >= 64
-            and indicators.index[-1] == latest_date
+            not selection_reasons
             and code in membership
             and bool(membership[code].iloc[-1])
         )
+        if not selected and not selection_reasons:
+            selection_reasons.append('종합 순위/상관관계 제한')
         candidates.append(Candidate(
             code=code,
             company=candidate_names[code],
@@ -322,9 +387,17 @@ def load_kospi_candidates(connection, extra_codes=None):
             percent_b=float(latest['percent_b']),
             average_turnover=float(latest['average_turnover_20']),
             selected=selected,
+            data_date=data_date,
+            required_date=latest_date,
+            history_rows=len(indicators),
+            data_issues=tuple(data_issues),
+            selection_reasons=tuple(selection_reasons),
         ))
 
-    candidates.sort(key=lambda item: (not item.selected, -item.mfi_change))
+    candidates.sort(key=lambda item: (
+        not item.selected,
+        -item.mfi_change if math.isfinite(item.mfi_change) else float('inf'),
+    ))
     if not candidates:
         raise RuntimeError('KOSPI 후보 종목의 일봉 지표를 계산할 수 없습니다.')
     return candidates
@@ -772,11 +845,24 @@ def release_trader_lock(connection, lock_name):
         cursor.execute('SELECT RELEASE_LOCK(%s)', (lock_name,))
 
 
+def entry_signal_reasons(stock, price):
+    reasons = []
+    if not math.isfinite(stock.mfi10):
+        reasons.append('유효하지 않은 MFI10')
+    elif stock.mfi10 > MFI_BUY_THRESHOLD:
+        reasons.append(f'MFI10 {stock.mfi10:.2f}>{MFI_BUY_THRESHOLD}')
+    if not math.isfinite(stock.ma20):
+        reasons.append('유효하지 않은 MA20')
+    elif not math.isfinite(price) or price <= 0 or price <= stock.ma20:
+        reasons.append(f'현재가 {price:,}<=MA20 {stock.ma20:,.2f} 또는 유효하지 않은 가격')
+    return reasons
+
+
 def _should_enter_position(stock, price, allow_entry):
     return (
         allow_entry
-        and stock.mfi10 <= MFI_BUY_THRESHOLD
-        and price > stock.ma20
+        and not getattr(stock, 'data_issues', ())
+        and not entry_signal_reasons(stock, price)
     )
 
 
@@ -860,6 +946,7 @@ class Trader:
         self, connection, creon, candidates, live, states=None,
         daytrading_order_quantities=None, allow_entries=True,
         daytrading_monitor_only=False, exclude_daytrading_positions=False,
+        daily_price_sync=None,
     ):
         self.connection = connection
         self.creon = creon
@@ -874,6 +961,84 @@ class Trader:
         self.exclude_daytrading_positions = exclude_daytrading_positions
         self.last_daytrading_codes_refresh = 0.0
         self.last_order_at = {}
+        self.daily_price_sync = daily_price_sync
+        self.daily_data_error = ''
+        self.last_decision_logs = {}
+        self.last_empty_cycle_log = None
+
+    def _refresh_daily_data(self, now):
+        if self.daily_price_sync is None:
+            return
+        if not self.daily_price_sync.step(self.candidates, now):
+            return
+        try:
+            self.connection.commit()
+            refreshed = load_kospi_candidates(
+                self.connection,
+                extra_codes=set(self.states).union(
+                    stock.code for stock in self.candidates
+                ),
+                expected_date=self.daily_price_sync.required_date,
+                expected_dates=self.daily_price_sync.required_dates,
+            )
+            if self.live:
+                new_candidates = [
+                    stock for stock in refreshed if stock.code not in self.states
+                ]
+                self.states.update(load_position_states(
+                    self.connection, self.creon.account, new_candidates
+                ))
+        except (RuntimeError, ValueError, pymysql.MySQLError) as exc:
+            self.daily_data_error = f'보충 후 일봉 지표 재조회 실패: {exc}'
+            print(
+                f'[일봉 갱신 오류] {self.daily_data_error}; '
+                '신규 매수 차단, 보유 종목 매도 감시 유지',
+                flush=True,
+            )
+            return
+        self.daily_data_error = ''
+        if refreshed != self.candidates:
+            print('[일봉 지표 갱신] 최신 완료 일봉으로 선정 조건을 재평가했습니다.')
+            self.candidates = refreshed
+            print_candidate_summary(
+                filter_candidates_by_owner(
+                    refreshed, self.daytrading_order_quantities,
+                    'mfi' if self.exclude_daytrading_positions else 'all',
+                    self.states,
+                ),
+                self.live, allow_entries=self.allow_entries,
+            )
+
+    def _log_entry_decision(self, stock, quote, state, session, restrictions):
+        if not stock.selected and state.quantity == 0:
+            return
+        reasons = restrictions + entry_signal_reasons(stock, quote.price)
+        if state.quantity * state.average_price >= ALLOCATION_PER_STOCK:
+            reasons.append('종목별 매입 한도 도달')
+        outcome = tuple(reasons) or ('매수신호',)
+        # Cache reason categories, not changing prices, to avoid per-tick log floods.
+        signature = (
+            session, tuple(restrictions),
+            stock.mfi10 <= MFI_BUY_THRESHOLD, quote.price > stock.ma20,
+            outcome == ('매수신호',),
+            state.quantity * state.average_price >= ALLOCATION_PER_STOCK,
+        )
+        logged = self.last_decision_logs.get(stock.code)
+        tick = time.monotonic()
+        if (
+            logged is None or logged[0] != signature
+            or tick - logged[1] >= DECISION_LOG_INTERVAL_SECONDS
+        ):
+            print(
+                f'[매수 판단 상세] {stock.company} ({stock.code}) '
+                f'세션 {session}, 일봉 {getattr(stock, "data_date", None)}, '
+                f'기준 {getattr(stock, "required_date", None)}, '
+                f'현재가 {quote.price:,}, MA20 {stock.ma20:,.2f}, '
+                f'MFI10 {stock.mfi10:.2f}, 보유 {state.quantity}주 | '
+                f'{"; ".join(outcome)}',
+                flush=True,
+            )
+            self.last_decision_logs[stock.code] = (signature, tick)
 
     def _log_order(self, action, stock, quantity, price, reason='', order_no=0):
         prefix = f'{"[모의 " if not self.live else "["}{"매수" if action == "buy" else "매도"}'
@@ -899,6 +1064,8 @@ class Trader:
         )
 
     def run_cycle(self):
+        now = datetime.now()
+        self._refresh_daily_data(now)
         now = datetime.now()
         session = trading_session(now)
         if (
@@ -963,13 +1130,32 @@ class Trader:
                     )
             candidates = eligible_candidates
         if not candidates:
+            tick = time.monotonic()
+            if (
+                self.last_empty_cycle_log is None
+                or self.last_empty_cycle_log[0] != session
+                or tick - self.last_empty_cycle_log[1] >= DECISION_LOG_INTERVAL_SECONDS
+            ):
+                print(
+                    f'[매수/매도 조건 조회] {now:%H:%M:%S} 세션 {session}, '
+                    '조회 대상 0종목 (선정/보유/소유권/거래시간 필터 적용)',
+                    flush=True,
+                )
+                self.last_empty_cycle_log = (session, tick)
             return
         quote_session = session or 'REGULAR'
-        if session == 'REGULAR':
+        if session in ('REGULAR', 'AFTER_MARKET'):
+            entry_status = '허용' if self.allow_entries else '차단(감시 전용)'
+            data_block_reason = self.daily_data_error or (
+                self.daily_price_sync.block_reason
+                if self.daily_price_sync is not None else ''
+            )
+            if data_block_reason:
+                entry_status = f'차단({data_block_reason})'
             print(
-                f'[매수/매도 조건 조회] {now:%H:%M:%S} 시세조회 '
+                f'[매수/매도 조건 조회] {now:%H:%M:%S} 세션 {session}, 시세조회 '
                 f'{len(candidates)}종목, 신규매수 '
-                f'{"허용" if self.allow_entries else "차단(감시 전용)"}',
+                f'{entry_status}',
                 flush=True,
             )
         try:
@@ -1060,15 +1246,29 @@ class Trader:
                         else 'hold'
                     )
             else:
-                entry_allowed = (
-                    self.allow_entries
-                    and session in ('REGULAR', 'AFTER_MARKET')
-                    and stock.selected
-                    and state.last_exit_date != now.date()
-                    and not state.exit_reason
-                )
+                restrictions = []
+                if not self.allow_entries:
+                    restrictions.append('감시 전용')
+                if session not in ('REGULAR', 'AFTER_MARKET'):
+                    restrictions.append('신규 매수 거래시간 외')
+                if not stock.selected:
+                    restrictions.append('전략 미선정')
+                if state.last_exit_date == now.date():
+                    restrictions.append('당일 매도 후 재진입 금지')
+                if state.exit_reason:
+                    restrictions.append(f'청산 대기 {state.exit_reason}')
+                restrictions.extend(getattr(stock, 'data_issues', ()))
+                if self.daily_price_sync is not None:
+                    if self.daily_price_sync.block_reason:
+                        restrictions.append(self.daily_price_sync.block_reason)
+                if self.daily_data_error:
+                    restrictions.append(self.daily_data_error)
+                entry_allowed = not restrictions
                 if entry_allowed and state.quantity == 0:
                     buy_condition_checks += 1
+                self._log_entry_decision(
+                    stock, quote, state, session, restrictions
+                )
                 action = state.exit_reason or decide_action(
                     stock,
                     quote.price,
@@ -1108,7 +1308,7 @@ class Trader:
                 save_position_state(
                     self.connection, self.creon.account, code, state
                 )
-        if session == 'REGULAR':
+        if session in ('REGULAR', 'AFTER_MARKET'):
             print(
                 f'[매수조건 확인] 평가 {buy_condition_checks}종목, '
                 f'매수신호 {buy_signal_count}건',
@@ -1124,10 +1324,16 @@ class Trader:
         budget_left = max(0, ALLOCATION_PER_STOCK - invested)
         order_price = quote.ask
         if budget_left <= 0 or order_price <= 0:
+            self._log_error(
+                stock,
+                f'매수 차단: 잔여 종목 한도 {budget_left:,.0f}원, '
+                f'매도호가 {order_price:,}원',
+            )
             return
 
         if self.live:
             if self._order_cooldown_active(stock.code):
+                self._log_error(stock, '매수 차단: 주문 재전송 대기 시간')
                 return
             available_cash = self.creon.get_available_cash()
             spend_limit = min(budget_left, available_cash)
@@ -1139,7 +1345,11 @@ class Trader:
         )
         if order_quantity <= 0:
             self._log_error(
-                stock, '매수 신호, 100만원 한도에서 매수 가능 수량 없음'
+                stock,
+                f'매수 신호이나 매수 가능 수량 없음: 종목 잔여 한도 '
+                f'{budget_left:,.0f}원, 사용 가능 예산 {spend_limit:,.0f}원, '
+                f'매도호가 {order_price:,}원, 비용 여유율 '
+                f'{BUY_COST_BUFFER_RATE:.2%}',
             )
             return
 
@@ -1385,6 +1595,20 @@ def print_candidate_summary(
             f'{stock.mfi_change:>+10.2f}'
         )
     print('-' * 70)
+    print(
+        '[일봉 지표 기준] 오늘 일봉 제외, 완료 일봉 MFI10/MA20 사용; '
+        '현재가만 실시간 갱신'
+    )
+    for stock in candidates:
+        data_date = getattr(stock, 'data_date', None)
+        required_date = getattr(stock, 'required_date', None)
+        reasons = getattr(stock, 'selection_reasons', ())
+        print(
+            f'[종목 선정 진단] {stock.company} ({stock.code}) '
+            f'일봉 {data_date}, 기준 {required_date}, '
+            f'이력 {getattr(stock, "history_rows", 0)}개 | '
+            f'{"선정" if stock.selected else "; ".join(reasons) or "전략 미선정"}'
+        )
 
 
 def main(args=None):
@@ -1398,6 +1622,7 @@ def main(args=None):
 
         if args.live and not is_market_open(datetime.now()):
             wait_until_market_open()
+            connection.commit()
             refreshed_candidates = load_kospi_candidates(connection)
             if refreshed_candidates != candidates:
                 print('개장 대기 중 후보가 변경되어 최신 후보를 표시합니다.')
@@ -1525,6 +1750,13 @@ def main(args=None):
             daytrading_monitor_only=args.daytrading_monitor_only,
             exclude_daytrading_positions=(
                 args.live and not args.daytrading_monitor_only
+            ),
+            daily_price_sync=(
+                DailyPriceSynchronizer(connection)
+                if args.live and not (
+                    args.monitor_only or args.daytrading_monitor_only
+                )
+                else None
             ),
         )
         if not args.live:

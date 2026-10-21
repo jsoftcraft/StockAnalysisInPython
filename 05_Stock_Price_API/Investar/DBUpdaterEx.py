@@ -190,16 +190,16 @@ class CREON:
 
         for attempt in range(3):
             self._wait_for_request()
-            chart.BlockRequest()
+            result = chart.BlockRequest()
             self._last_request_at = time.monotonic()
             status = chart.GetDibStatus()
-            if status == 0:
+            if result == 0 and status == 0:
                 break
-            if status == 4 and attempt < 2:
+            if (result == 4 or status == 4) and attempt < 2:
                 self._wait_for_request(force=True)
                 continue
             raise RuntimeError(
-                f"{code} 일봉 조회 실패 (상태 {status}): "
+                f"{code} 일봉 조회 실패 (ret={result}, 상태 {status}): "
                 f"{chart.GetDibMsg1()}"
             )
 
@@ -210,6 +210,28 @@ class CREON:
             for index in range(count)
         ]
         return pd.DataFrame(rows, columns=columns)
+
+
+def insert_missing_daily_prices(connection, df, code):
+    """Insert missing bars without changing existing prices or committing."""
+    values = [
+        (
+            code, row.date, int(row.open), int(row.high), int(row.low),
+            int(row.close), int(row.diff), int(row.volume),
+        )
+        for row in df.itertuples(index=False)
+    ]
+    if not values:
+        return 0
+    with connection.cursor() as cursor:
+        cursor.executemany(
+            'INSERT INTO daily_price '
+            '(code, date, open, high, low, close, diff, volume) '
+            'VALUES (%s, %s, %s, %s, %s, %s, %s, %s) '
+            'ON DUPLICATE KEY UPDATE code = VALUES(code)',
+            values,
+        )
+        return cursor.rowcount
 
 
 class DBUpdater:  
@@ -408,30 +430,12 @@ class DBUpdater:
 
     def insert_missing_daily_prices(self, df, num, code, company):
         """DB에 아직 없는 일봉만 저장하고 기존 가격은 변경하지 않는다."""
-        sql = """INSERT IGNORE INTO daily_price
-                 (code, date, open, high, low, close, diff, volume)
-                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"""
-        values = [
-            (
-                code,
-                row.date,
-                int(row.open),
-                int(row.high),
-                int(row.low),
-                int(row.close),
-                int(row.diff),
-                int(row.volume),
-            )
-            for row in df.itertuples(index=False)
-        ]
-        with self.conn.cursor() as curs:
-            curs.executemany(sql, values)
-            inserted_rows = curs.rowcount
-            self.conn.commit()
-            print(
-                f'[{datetime.now():%Y-%m-%d %H:%M}] #{num + 1:04d} '
-                f'{company} ({code}): {inserted_rows} missing rows inserted'
-            )
+        inserted_rows = insert_missing_daily_prices(self.conn, df, code)
+        self.conn.commit()
+        print(
+            f'[{datetime.now():%Y-%m-%d %H:%M}] #{num + 1:04d} '
+            f'{company} ({code}): {inserted_rows} missing rows inserted'
+        )
         return inserted_rows
 
     def replace_minute_price(self, df, code, company):

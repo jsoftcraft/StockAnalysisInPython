@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from BollingerBand_MFI10_Monitor import (
+    event_records,
     make_chart_bars,
     parse_log_records,
     progress_snapshot,
@@ -10,6 +11,13 @@ from BollingerBand_MFI10_Monitor import (
 
 
 class MonitorLogTests(unittest.TestCase):
+    def test_daily_data_warnings_are_visible_in_recent_events(self):
+        record = {
+            'timestamp': '2026-10-21 09:00:00', 'level': 'INFO',
+            'message': '[일봉 보충 미완료] missing bars; 신규 매수 차단 유지',
+        }
+        self.assertEqual(event_records([record]), [record])
+
     def test_parses_recent_trader_log_lines(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'trader.log'

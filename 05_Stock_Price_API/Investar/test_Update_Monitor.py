@@ -2,10 +2,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from Update_Monitor import make_progress, read_log_lines
+from Update_Monitor import DEFAULT_LOG_PATH, make_progress, read_log_lines
 
 
 class UpdateMonitorTests(unittest.TestCase):
+    def test_default_log_path_uses_user_desktop(self):
+        self.assertEqual(
+            DEFAULT_LOG_PATH,
+            Path.home() / 'Desktop' / 'StockAnalysis_Update.log',
+        )
+
     def test_reads_carriage_return_progress_as_separate_records(self):
         with tempfile.TemporaryDirectory() as directory:
             log_path = Path(directory) / 'update.log'

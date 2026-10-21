@@ -1,12 +1,14 @@
 import unittest
-from datetime import datetime
+from dataclasses import replace
+from datetime import date, datetime
 from io import StringIO
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from contextlib import redirect_stdout
 
 from BollingerBand_MFI10_Trader import (
     BrokerPosition,
+    Candidate,
     CreonClient,
     creon_code,
     is_market_open,
@@ -21,6 +23,7 @@ from BollingerBand_MFI10_Trader import (
     filter_candidates_by_owner,
     load_company_names,
     load_position_state_codes,
+    main,
     print_candidate_summary,
     reconcile_daytrading_position_state,
     save_position_state,
@@ -157,6 +160,279 @@ class CandidateNameTests(unittest.TestCase):
             {'005930': '삼성전자'},
         )
         self.assertEqual(connection.current_cursor.params, ('000660', '005930'))
+
+
+class DailyDataAndDecisionTests(unittest.TestCase):
+    def setUp(self):
+        self.stock = Candidate(
+            code='005930', company='Samsung', ma20=100, mfi10=58.06,
+            mfi_change=5, return_1m=0.1, return_3m=0.2, percent_b=0.7,
+            average_turnover=2_000_000_000, selected=True,
+            data_date=date(2026, 10, 20), required_date=date(2026, 10, 20),
+            history_rows=180,
+        )
+        self.creon = SimpleNamespace(
+            account='account',
+            get_quotes=Mock(return_value={
+                '005930': Quote(price=110, ask=111, bid=109)
+            }),
+            get_positions=Mock(return_value={}),
+        )
+
+    def test_logs_actual_mfi_price_and_dates_without_per_tick_detail_flood(self):
+        self.creon.get_quotes.side_effect = [
+            {'005930': Quote(price=110, ask=111, bid=109)},
+            {'005930': Quote(price=111, ask=112, bid=110)},
+            {'005930': Quote(price=99, ask=100, bid=98)},
+        ]
+        trader = Trader(None, self.creon, [self.stock], live=False)
+        output = StringIO()
+        with patch(
+            'BollingerBand_MFI10_Trader.trading_session', return_value='REGULAR'
+        ), patch(
+            'BollingerBand_MFI10_Trader.time.monotonic', return_value=100
+        ), patch.object(trader, '_buy') as buy, redirect_stdout(output):
+            for _ in range(3):
+                trader.run_cycle()
+        self.assertEqual(output.getvalue().count('[매수 판단 상세]'), 2)
+        self.assertIn('MFI10 58.06>50', output.getvalue())
+        self.assertIn('일봉 2026-10-20, 기준 2026-10-20', output.getvalue())
+        self.assertIn('현재가 99<=MA20 100.00', output.getvalue())
+        buy.assert_not_called()
+
+    def test_repeats_diagnostics_after_five_minutes(self):
+        trader = Trader(None, self.creon, [self.stock], live=False)
+        output = StringIO()
+        with patch(
+            'BollingerBand_MFI10_Trader.trading_session', return_value='REGULAR'
+        ), redirect_stdout(output):
+            for tick in (100, 399, 400):
+                with patch(
+                    'BollingerBand_MFI10_Trader.time.monotonic', return_value=tick
+                ):
+                    trader.run_cycle()
+        self.assertEqual(output.getvalue().count('[매수 판단 상세]'), 2)
+
+    def test_aftermarket_emits_evaluation_and_decision_logs(self):
+        trader = Trader(None, self.creon, [self.stock], live=False)
+        output = StringIO()
+        with patch(
+            'BollingerBand_MFI10_Trader.trading_session',
+            return_value='AFTER_MARKET',
+        ), redirect_stdout(output):
+            trader.run_cycle()
+        self.assertIn('세션 AFTER_MARKET', output.getvalue())
+        self.assertIn('평가 1종목, 매수신호 0건', output.getvalue())
+
+    def test_empty_aftermarket_still_emits_throttled_monitoring_heartbeat(self):
+        stock = replace(self.stock, selected=False)
+        trader = Trader(None, self.creon, [stock], live=False)
+        output = StringIO()
+        with patch(
+            'BollingerBand_MFI10_Trader.trading_session',
+            return_value='AFTER_MARKET',
+        ), redirect_stdout(output):
+            trader.run_cycle()
+            trader.run_cycle()
+        self.assertEqual(output.getvalue().count('조회 대상 0종목'), 1)
+        self.creon.get_quotes.assert_not_called()
+
+    def test_reloads_repaired_candidates_and_preserves_existing_states(self):
+        stock = replace(
+            self.stock, selected=False, data_date=date(2026, 10, 16),
+            data_issues=('오래된 일봉',),
+        )
+        refreshed = replace(self.stock, mfi10=45)
+        sync = SimpleNamespace(
+            step=Mock(return_value=True), required_date=date(2026, 10, 20),
+            required_dates=(date(2026, 10, 19), date(2026, 10, 20)),
+            block_reason='',
+        )
+        state = PositionState()
+        connection = Mock()
+        trader = Trader(
+            connection, self.creon, [stock], live=False,
+            states={'005930': state}, daily_price_sync=sync,
+        )
+        with patch(
+            'BollingerBand_MFI10_Trader.trading_session', return_value='REGULAR'
+        ), patch(
+            'BollingerBand_MFI10_Trader.load_kospi_candidates',
+            return_value=[refreshed],
+        ) as reload_candidates, patch.object(
+            trader, '_buy'
+        ) as buy, redirect_stdout(StringIO()):
+            trader.run_cycle()
+        reload_candidates.assert_called_once_with(
+            connection, extra_codes={'005930'},
+            expected_date=sync.required_date, expected_dates=sync.required_dates,
+        )
+        self.assertIs(trader.states['005930'], state)
+        buy.assert_called_once()
+        connection.commit.assert_called_once()
+
+    def test_refresh_failure_blocks_new_entries_but_preserves_trailing_sell(self):
+        held = replace(self.stock, code='000660', mfi10=45)
+        stock = replace(self.stock, mfi10=45)
+        self.creon.get_quotes.return_value = {
+            stock.code: Quote(110, 111, 109),
+            held.code: Quote(90, 91, 89),
+        }
+        self.creon.get_positions.return_value = {
+            held.code: BrokerPosition(quantity=3, average_price=100),
+        }
+        state = PositionState(quantity=3, average_price=100, peak_price=100)
+        sync = SimpleNamespace(
+            step=Mock(return_value=True), required_date=date(2026, 10, 20),
+            required_dates=(date(2026, 10, 20),), block_reason='',
+        )
+        trader = Trader(
+            Mock(), self.creon, [stock, held], live=True,
+            states={held.code: state}, daily_price_sync=sync,
+        )
+        with patch(
+            'BollingerBand_MFI10_Trader.trading_session', return_value='REGULAR'
+        ), patch(
+            'BollingerBand_MFI10_Trader.load_daytrading_order_codes',
+            return_value={},
+        ), patch(
+            'BollingerBand_MFI10_Trader.load_kospi_candidates',
+            side_effect=RuntimeError('DB unavailable'),
+        ), patch(
+            'BollingerBand_MFI10_Trader.save_position_state'
+        ), patch.object(trader, '_buy') as buy, patch.object(
+            trader, '_sell'
+        ) as sell, redirect_stdout(StringIO()):
+            trader.run_cycle()
+        buy.assert_not_called()
+        sell.assert_called_once_with(held, Quote(90, 91, 89), state, 'trailing_stop')
+        self.assertIn('DB unavailable', trader.daily_data_error)
+
+    def test_reference_error_blocks_entry_even_with_buy_eligible_indicators(self):
+        stock = replace(self.stock, mfi10=45)
+        sync = SimpleNamespace(
+            step=Mock(return_value=False), block_reason='기준 거래일 확인 실패'
+        )
+        trader = Trader(
+            Mock(), self.creon, [stock], live=False, daily_price_sync=sync
+        )
+        output = StringIO()
+        with patch(
+            'BollingerBand_MFI10_Trader.trading_session', return_value='REGULAR'
+        ), patch.object(trader, '_buy') as buy, redirect_stdout(output):
+            trader.run_cycle()
+        buy.assert_not_called()
+        self.assertIn('기준 거래일 확인 실패', output.getvalue())
+        self.assertIn('신규매수 차단(기준 거래일 확인 실패)', output.getvalue())
+
+    def test_repair_does_not_reset_same_day_exit_guard(self):
+        stock = replace(self.stock, mfi10=45)
+        state = PositionState(last_exit_date=date(2026, 10, 21))
+        sync = SimpleNamespace(
+            step=Mock(return_value=True), required_date=date(2026, 10, 20),
+            required_dates=(date(2026, 10, 20),), block_reason='',
+        )
+        trader = Trader(
+            Mock(), self.creon, [self.stock], live=False,
+            states={'005930': state}, daily_price_sync=sync,
+        )
+        with patch(
+            'BollingerBand_MFI10_Trader.datetime'
+        ) as clock, patch(
+            'BollingerBand_MFI10_Trader.trading_session', return_value='REGULAR'
+        ), patch(
+            'BollingerBand_MFI10_Trader.load_kospi_candidates',
+            return_value=[stock],
+        ), patch.object(trader, '_buy') as buy, redirect_stdout(StringIO()):
+            clock.now.return_value = datetime(2026, 10, 21, 10)
+            trader.run_cycle()
+        buy.assert_not_called()
+        self.assertEqual(state.last_exit_date, date(2026, 10, 21))
+
+    def test_order_quantity_failure_logs_budget_and_quote(self):
+        self.creon.get_available_cash = lambda: 0
+        trader = Trader(None, self.creon, [self.stock], live=True)
+        output = StringIO()
+        with redirect_stdout(output):
+            trader._buy(
+                self.stock, Quote(110, 111, 109),
+                PositionState(), BrokerPosition(),
+            )
+        self.assertIn('사용 가능 예산 0원', output.getvalue())
+        self.assertIn('매도호가 111원', output.getvalue())
+
+    def test_newly_loaded_candidates_restore_persisted_owner_and_exit_guards(self):
+        sync = SimpleNamespace(
+            step=Mock(return_value=True), required_date=date(2026, 10, 20),
+            required_dates=(date(2026, 10, 20),), block_reason='',
+        )
+        stock = replace(self.stock, mfi10=45)
+        persisted = PositionState(
+            owner='daytrading', last_exit_date=date(2026, 10, 21)
+        )
+        trader = Trader(
+            Mock(), self.creon, [], live=True, daily_price_sync=sync,
+            exclude_daytrading_positions=True,
+        )
+        with patch(
+            'BollingerBand_MFI10_Trader.trading_session', return_value='REGULAR'
+        ), patch(
+            'BollingerBand_MFI10_Trader.load_daytrading_order_codes',
+            return_value={},
+        ), patch(
+            'BollingerBand_MFI10_Trader.load_kospi_candidates',
+            return_value=[stock],
+        ), patch(
+            'BollingerBand_MFI10_Trader.load_position_states',
+            return_value={stock.code: persisted},
+        ) as load_states, patch.object(
+            trader, '_buy'
+        ) as buy, redirect_stdout(StringIO()):
+            trader.run_cycle()
+        load_states.assert_called_once_with(
+            trader.connection, 'account', [stock]
+        )
+        self.assertIs(trader.states[stock.code], persisted)
+        self.creon.get_quotes.assert_not_called()
+        buy.assert_not_called()
+
+    def test_only_normal_live_mode_enables_automatic_database_repair(self):
+        for live, monitor_only, daytrading_only in (
+            (False, False, False), (True, True, False),
+            (True, False, True), (True, False, False),
+        ):
+            args = SimpleNamespace(
+                live=live, monitor_only=monitor_only,
+                daytrading_monitor_only=daytrading_only,
+                once=True, interval=2,
+            )
+            connection = Mock()
+            trader_class = Mock()
+            synchronizer = Mock()
+            with self.subTest(args=args), patch.multiple(
+                'BollingerBand_MFI10_Trader',
+                connect_database=Mock(return_value=connection),
+                load_kospi_candidates=Mock(return_value=[self.stock]),
+                print_candidate_summary=Mock(),
+                is_market_open=Mock(return_value=True),
+                ensure_position_state_table=Mock(),
+                CreonClient=Mock(return_value=self.creon),
+                acquire_trader_lock=Mock(return_value='test-lock'),
+                release_trader_lock=Mock(),
+                load_daytrading_order_codes=Mock(return_value={}),
+                load_position_state_codes=Mock(return_value=set()),
+                load_position_states=Mock(return_value={}),
+                save_position_state=Mock(),
+                Trader=trader_class,
+                DailyPriceSynchronizer=synchronizer,
+            ), redirect_stdout(StringIO()):
+                main(args)
+            enabled = live and not (monitor_only or daytrading_only)
+            self.assertEqual(synchronizer.called, enabled)
+            self.assertIs(
+                trader_class.call_args.kwargs['daily_price_sync'],
+                synchronizer.return_value if enabled else None,
+            )
 
 
 class AfterHoursSellTests(unittest.TestCase):
