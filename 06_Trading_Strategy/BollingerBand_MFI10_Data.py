@@ -11,6 +11,7 @@ from typing import Callable, Protocol
 
 import pandas as pd
 import pymysql
+from Trading_Code import creon_code
 
 
 DAILY_REFRESH_SECONDS = 300
@@ -186,7 +187,7 @@ class DailyPriceSynchronizer:
             try:
                 prices = completed_daily_prices(
                     source.get_stock_price_day(
-                        code if code.startswith('Q') else 'A' + code,
+                        creon_code(code),
                         (first_missing - timedelta(days=10)).isoformat(),
                         required_date.isoformat(),
                     ),

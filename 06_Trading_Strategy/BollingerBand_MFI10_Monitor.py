@@ -16,6 +16,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import pandas as pd
+from BollingerBand_MFI10_Status import read_status
 
 from BollingerBand_MFI10_Trader import (
     MARKET,
@@ -51,7 +52,12 @@ def parse_log_records(path, limit=240):
         timestamp, level, message = match.groups()
         records.append({
             'timestamp': timestamp,
-            'level': level,
+            'level': (
+                'WARNING' if level == 'INFO' and any(marker in message for marker in (
+                    '현재가 조회 실패', '[거래 경고]', '[상태 기록 오류]',
+                    '[일봉 갱신 오류]', '[일봉 보충 실패]',
+                )) else level
+            ),
             'message': message,
         })
     return records
@@ -257,6 +263,36 @@ def get_task_status(task_name=TASK_NAME):
         return {'state': 'unknown', 'last_run': None, 'last_result': None}
 
 
+def decision_snapshot(path, task, records, now=None):
+    snapshot = read_status(path, now=now)
+    if snapshot['state'] != 'fresh':
+        return snapshot
+    latest_start = max(
+        (record['timestamp'].replace(',', '.') for record in records
+         if 'Trader process started' in record['message']),
+        default='',
+    )
+    try:
+        generated = datetime.fromisoformat(snapshot['generated_at'])
+        starts = [
+            datetime.fromisoformat(value)
+            for value in (latest_start, task.get('last_run')) if value
+        ]
+        if any(start > generated for start in starts):
+            snapshot['state'] = 'stale'
+            snapshot['message'] = '이전 실행의 판단 정보입니다. 현재 실행의 첫 기록을 기다립니다.'
+        elif snapshot['cycle_error']:
+            snapshot['state'] = 'error'
+            snapshot['message'] = snapshot['cycle_error']
+        elif str(task.get('state', '')).lower() != 'running':
+            snapshot['state'] = 'inactive'
+            snapshot['message'] = '실행 상태를 확인할 수 없습니다. 아래 정보는 마지막 관측값입니다.'
+    except (ValueError, TypeError):
+        snapshot['state'] = 'stale'
+        snapshot['message'] = '실행 시각 비교 실패. 현재 매수 가능 여부는 미확인입니다.'
+    return snapshot
+
+
 class DashboardService:
     def __init__(self, log_path=LOG_PATH, task_name=TASK_NAME):
         self.log_path = Path(log_path)
@@ -344,6 +380,9 @@ class DashboardService:
             **overview,
             'runtime': progress_snapshot(task, records),
             'events': event_records(records),
+            'trading': decision_snapshot(
+                self.log_path.with_name('trader_status.json'), task, records
+            ),
         }
 
     def chart(self, code, limit=90):

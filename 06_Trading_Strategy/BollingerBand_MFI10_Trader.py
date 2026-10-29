@@ -21,6 +21,8 @@ from typing import Optional
 import pandas as pd
 import pymysql
 from BollingerBand_MFI10_Data import DailyPriceSynchronizer
+from BollingerBand_MFI10_Status import STATUS_PATH, write_status
+from Trading_Code import creon_code, normalize_code
 from BollingerBand_MFI10_Selection import (
     TOP_STOCK_COUNT,
     TRAILING_STOP_RATE,
@@ -33,7 +35,7 @@ from BollingerBand_MFI10_Selection import (
 MARKET = 'KOSPI'
 STOCK_COUNT = TOP_STOCK_COUNT
 PASSWORD = "root"
-ALLOCATION_PER_STOCK = 1_000_000
+ALLOCATION_PER_STOCK = 2_000_000
 MA_PERIOD = 20
 MFI_PERIOD = 10
 MFI_BUY_THRESHOLD = 50
@@ -165,18 +167,6 @@ class PositionState:
     exit_reason: str = ''
     last_exit_date: Optional[date] = None
     owner: str = ''
-
-
-def normalize_code(code):
-    normalized = str(code).strip()
-    if normalized.startswith('A'):
-        normalized = normalized[1:]
-    return normalized.zfill(6) if normalized.isdigit() else normalized
-
-
-def creon_code(code):
-    normalized = normalize_code(code)
-    return f'A{normalized}' if normalized.isdigit() else normalized
 
 
 def trading_session(now):
@@ -858,6 +848,26 @@ def entry_signal_reasons(stock, price):
     return reasons
 
 
+def buy_quantity(state, ask, available_cash=None):
+    budget_left = max(0, ALLOCATION_PER_STOCK - state.quantity * state.average_price)
+    spend_limit = (
+        budget_left if available_cash is None else min(budget_left, available_cash)
+    )
+    if not math.isfinite(ask) or ask <= 0 or spend_limit <= 0:
+        return 0
+    return math.floor(spend_limit / (ask * (1 + BUY_COST_BUFFER_RATE)))
+
+
+def buy_budget_reasons(state, ask):
+    if buy_quantity(state, ask) > 0:
+        return []
+    budget_left = max(0, ALLOCATION_PER_STOCK - state.quantity * state.average_price)
+    return [
+        f'추가 1주 매수 불가: 종목 잔여 한도 {budget_left:,.0f}원, '
+        f'매도호가 {ask:,}원, 비용 여유율 {BUY_COST_BUFFER_RATE:.2%}'
+    ]
+
+
 def _should_enter_position(stock, price, allow_entry):
     return (
         allow_entry
@@ -947,6 +957,7 @@ class Trader:
         daytrading_order_quantities=None, allow_entries=True,
         daytrading_monitor_only=False, exclude_daytrading_positions=False,
         daily_price_sync=None,
+        status_path=None,
     ):
         self.connection = connection
         self.creon = creon
@@ -965,6 +976,11 @@ class Trader:
         self.daily_data_error = ''
         self.last_decision_logs = {}
         self.last_empty_cycle_log = None
+        self.status_path = status_path
+        self.cycle_decisions = {}
+        self.last_orders = {}
+        self.cycle_error = ''
+        self.last_errors = {}
 
     def _refresh_daily_data(self, now):
         if self.daily_price_sync is None:
@@ -1012,16 +1028,17 @@ class Trader:
     def _log_entry_decision(self, stock, quote, state, session, restrictions):
         if not stock.selected and state.quantity == 0:
             return
-        reasons = restrictions + entry_signal_reasons(stock, quote.price)
-        if state.quantity * state.average_price >= ALLOCATION_PER_STOCK:
-            reasons.append('종목별 매입 한도 도달')
+        reasons = (
+            restrictions + entry_signal_reasons(stock, quote.price)
+            + buy_budget_reasons(state, quote.ask)
+        )
         outcome = tuple(reasons) or ('매수신호',)
         # Cache reason categories, not changing prices, to avoid per-tick log floods.
         signature = (
             session, tuple(restrictions),
             stock.mfi10 <= MFI_BUY_THRESHOLD, quote.price > stock.ma20,
             outcome == ('매수신호',),
-            state.quantity * state.average_price >= ALLOCATION_PER_STOCK,
+            buy_quantity(state, quote.ask) == 0,
         )
         logged = self.last_decision_logs.get(stock.code)
         tick = time.monotonic()
@@ -1041,6 +1058,11 @@ class Trader:
             self.last_decision_logs[stock.code] = (signature, tick)
 
     def _log_order(self, action, stock, quantity, price, reason='', order_no=0):
+        self.last_orders[stock.code] = {
+            'side': action, 'quantity': quantity, 'price': price,
+            'at': datetime.now().isoformat(timespec='seconds'),
+            'status': 'filled' if self.live else 'dry_run',
+        }
         prefix = f'{"[모의 " if not self.live else "["}{"매수" if action == "buy" else "매도"}'
         msg = (
             f'{prefix}] {stock.company} ({stock.code}) {quantity}주 '
@@ -1053,7 +1075,25 @@ class Trader:
         print(msg)
 
     def _log_error(self, stock, message):
-        print(f'{stock.company} ({stock.code}): {message}')
+        tick = time.monotonic()
+        previous = self.last_errors.get(stock.code)
+        if (
+            previous is not None and previous[0] == message
+            and tick - previous[1] < DECISION_LOG_INTERVAL_SECONDS
+        ):
+            return
+        self.last_errors[stock.code] = (message, tick)
+        logger = (
+            sys.stdout.logger if isinstance(sys.stdout, _TeeStream)
+            else logging.getLogger('bollingerband_mfi10_trader.mfi')
+        )
+        text = f'[거래 경고] {stock.company} ({stock.code}): {message}'
+        if logger.handlers:
+            logger.warning(text)
+            output = sys.stdout.stream if isinstance(sys.stdout, _TeeStream) else sys.stdout
+            print(text, file=output, flush=True)
+        else:
+            print(text, flush=True)
 
     def _log_signal(self, stock, quote, state, reason):
         stop_price = state.peak_price * (1 - TRAILING_STOP_RATE)
@@ -1064,6 +1104,49 @@ class Trader:
         )
 
     def run_cycle(self):
+        self.cycle_decisions = {}
+        self.cycle_error = ''
+        try:
+            self._run_cycle()
+        except Exception as exc:
+            self.cycle_error = f'감시 주기 중단: {exc}'
+            raise
+        finally:
+            if self.status_path is not None:
+                try:
+                    write_status(self.status_path, {
+                        'version': 1,
+                        'generated_at': datetime.now().isoformat(timespec='seconds'),
+                        'cycle_error': self.cycle_error,
+                        'decisions': list(self.cycle_decisions.values()),
+                    })
+                except (OSError, ValueError) as exc:
+                    print(f'[상태 기록 오류] 모니터 판단 정보를 저장하지 못했습니다: {exc}', flush=True)
+
+    def _record_decision(self, stock, quote, state, restrictions):
+        reasons = list(restrictions)
+        if quote is not None:
+            reasons += entry_signal_reasons(stock, quote.price)
+            reasons += buy_budget_reasons(state, quote.ask)
+        row = {
+            'code': stock.code, 'company': stock.company,
+            'selected': stock.selected,
+            'price': quote.price if quote else None,
+            'ask': quote.ask if quote else None,
+            'ma20': stock.ma20 if math.isfinite(stock.ma20) else None,
+            'mfi10': stock.mfi10 if math.isfinite(stock.mfi10) else None,
+            'quantity': state.quantity,
+            'budget_left': max(0, ALLOCATION_PER_STOCK - state.quantity * state.average_price),
+            'order_quantity': buy_quantity(state, quote.ask) if quote and not reasons else 0,
+            'status': 'blocked' if reasons else 'cash_unchecked',
+            'reasons': reasons,
+            'last_order': self.last_orders.get(stock.code),
+        }
+        if stock.selected or state.quantity > 0 or quote is None or row['last_order']:
+            self.cycle_decisions[stock.code] = row
+        return row
+
+    def _run_cycle(self):
         now = datetime.now()
         self._refresh_daily_data(now)
         now = datetime.now()
@@ -1086,6 +1169,13 @@ class Trader:
             self.candidates, self.daytrading_order_quantities, owner,
             self.states,
         )
+        for stock in self.candidates:
+            state = self.states.get(stock.code, PositionState())
+            if stock.selected or state.quantity > 0:
+                self._record_decision(
+                    stock, None, state,
+                    ['시세/거래시간/소유권 필터로 미평가'],
+                )
         if session == 'AFTER_MARKET' and self.allow_entries:
             candidates = [
                 stock for stock in candidates
@@ -1117,6 +1207,7 @@ class Trader:
                         stock.code
                     )
                 except Exception as exc:
+                    self.cycle_error = f'시세 조회 오류: {exc}'
                     self._log_error(
                         stock,
                         f'애프터마켓 대상 확인 실패, 주문 차단: {exc}',
@@ -1161,6 +1252,7 @@ class Trader:
         try:
             quotes = self.creon.get_quotes(candidates, session=quote_session)
         except Exception as exc:
+            self.cycle_error = f'시세 조회 오류: {exc}'
             print(
                 f'[시세 조회 오류] {quote_session} 시세를 가져오지 못했습니다: '
                 f'{exc}; 다음 주기에 재시도합니다.',
@@ -1176,7 +1268,15 @@ class Trader:
             quote = quotes.get(stock.code)
             if quote is None:
                 self._log_error(stock, '현재가 조회 실패')
+                self._record_decision(
+                    stock, None, self.states.get(stock.code, PositionState()),
+                    ['현재가 조회 실패'],
+                )
                 continue
+            previous_error = self.last_errors.get(stock.code)
+            if previous_error and previous_error[0] == '현재가 조회 실패':
+                print(f'[시세 복구] {stock.company} ({stock.code}) 시세 정상 수신', flush=True)
+                self.last_errors.pop(stock.code)
 
             state = self.states.setdefault(stock.code, PositionState())
             broker_position = positions.get(stock.code, BrokerPosition())
@@ -1269,12 +1369,15 @@ class Trader:
                 self._log_entry_decision(
                     stock, quote, state, session, restrictions
                 )
+                self._record_decision(stock, quote, state, restrictions)
                 action = state.exit_reason or decide_action(
                     stock,
                     quote.price,
                     state,
                     allow_entry=entry_allowed,
                 )
+                if action == 'buy_signal' and buy_quantity(state, quote.ask) == 0:
+                    action = 'hold'
             if state.quantity > 0 and state.peak_price <= 0:
                 state.peak_price = max(state.average_price, quote.price)
 
@@ -1290,11 +1393,20 @@ class Trader:
                     state.stop_triggered = True
                 states_to_save[stock.code] = state
                 self._sell(stock, quote, state, action)
+                row = self._record_decision(stock, quote, state, ['매도 관리 중'])
+                row['status'] = 'selling'
                 continue
 
             if action == 'buy_signal':
                 buy_signal_count += 1
-                self._buy(stock, quote, state, broker_position)
+                result = self._buy(stock, quote, state, broker_position)
+                if result is not None:
+                    self.cycle_decisions[stock.code].update(result)
+                self.cycle_decisions[stock.code]['last_order'] = self.last_orders.get(stock.code)
+                self.cycle_decisions[stock.code]['quantity'] = state.quantity
+                self.cycle_decisions[stock.code]['budget_left'] = max(
+                    0, ALLOCATION_PER_STOCK - state.quantity * state.average_price
+                )
                 if stock.code in self.states:
                     states_to_save[stock.code] = self.states[stock.code]
                 continue
@@ -1323,26 +1435,24 @@ class Trader:
         invested = state.quantity * state.average_price
         budget_left = max(0, ALLOCATION_PER_STOCK - invested)
         order_price = quote.ask
-        if budget_left <= 0 or order_price <= 0:
+        if buy_quantity(state, order_price) == 0:
             self._log_error(
                 stock,
                 f'매수 차단: 잔여 종목 한도 {budget_left:,.0f}원, '
                 f'매도호가 {order_price:,}원',
             )
-            return
+            return {'status': 'blocked', 'reasons': buy_budget_reasons(state, order_price), 'order_quantity': 0}
 
         if self.live:
             if self._order_cooldown_active(stock.code):
                 self._log_error(stock, '매수 차단: 주문 재전송 대기 시간')
-                return
+                return {'status': 'blocked', 'reasons': ['주문 재전송 대기 시간'], 'order_quantity': 0}
             available_cash = self.creon.get_available_cash()
             spend_limit = min(budget_left, available_cash)
         else:
             spend_limit = budget_left
 
-        order_quantity = math.floor(
-            spend_limit / (order_price * (1 + BUY_COST_BUFFER_RATE))
-        )
+        order_quantity = buy_quantity(state, order_price, spend_limit)
         if order_quantity <= 0:
             self._log_error(
                 stock,
@@ -1351,7 +1461,7 @@ class Trader:
                 f'매도호가 {order_price:,}원, 비용 여유율 '
                 f'{BUY_COST_BUFFER_RATE:.2%}',
             )
-            return
+            return {'status': 'blocked', 'reasons': [f'계좌 가용 예산 {spend_limit:,.0f}원으로 1주 매수 불가'], 'order_quantity': 0}
 
         if not self.live:
             expected_amount = order_quantity * order_price
@@ -1359,7 +1469,7 @@ class Trader:
                 'buy', stock, order_quantity, order_price,
                 reason=f'예상 매입액 {expected_amount:,}원 (한도 {ALLOCATION_PER_STOCK:,}원)'
             )
-            return
+            return {'status': 'dry_run', 'reasons': ['모의 실행: 주문 미전송'], 'order_quantity': order_quantity}
 
         order_no = self.creon.send_ioc_best_order(
             'buy', stock.code, order_quantity, order_price
@@ -1372,7 +1482,7 @@ class Trader:
             self._log_error(
                 stock, f'최유리 IOC 매수 미체결 (주문번호 {order_no})'
             )
-            return
+            return {'status': 'unfilled', 'reasons': ['주문 전송 후 체결 미확인'], 'order_quantity': order_quantity}
 
         old_cost = state.quantity * state.average_price
         state.quantity += filled
@@ -1395,6 +1505,7 @@ class Trader:
                 f'{stock.company} ({stock.code}) 매수 일부 체결 '
                 f'{filled}/{order_quantity}주; 잔여 예산은 다음 감시 주기에 재주문'
             )
+        return {'status': 'filled', 'reasons': [f'매수 {filled}/{order_quantity}주 체결 확인'], 'order_quantity': order_quantity}
 
     def _sell(self, stock, quote, state, reason):
         if not self.live:
@@ -1757,6 +1868,9 @@ def main(args=None):
                     args.monitor_only or args.daytrading_monitor_only
                 )
                 else None
+            ),
+            status_path=(
+                STATUS_PATH if args.live and not args.daytrading_monitor_only else None
             ),
         )
         if not args.live:

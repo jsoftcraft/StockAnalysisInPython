@@ -141,6 +141,12 @@
     .empty, .error-note { padding: 24px 12px; color: var(--muted); text-align: center; font-size: 12px; }
     .error-note { color: #a43d2f; }
     .footnote { margin: 12px 2px 0; color: var(--muted); font-size: 10px; }
+    .decision-panel { margin-top: 14px; padding: 14px; overflow-x: auto; }
+    .decision-panel h2 { margin: 0 0 8px; font-size: 14px; }
+    .decision-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .decision-table th, .decision-table td { padding: 9px; text-align: left; border-bottom: 1px solid var(--line); }
+    .decision-table th { white-space: nowrap; }
+    #decisionMessage { margin: 8px 0; color: var(--muted); }
     @media (min-width: 1100px) and (min-height: 850px) {
       .stock-list { max-height: 390px; }
       .chart-panel { min-height: 450px; }
@@ -215,7 +221,7 @@
       <section class="panel">
         <div class="panel-heading">
           <h2>오늘의 선정 종목</h2>
-          <span class="subtle" id="selectionCaption">전략 신호</span>
+          <span class="subtle" id="selectionCaption">선정은 매수 가능을 의미하지 않습니다</span>
         </div>
         <div class="stock-list" id="stockList"><div class="empty">분석 결과를 불러오는 중입니다.</div></div>
       </section>
@@ -237,6 +243,15 @@
           <span class="middle"><i></i>20일 중심선</span><span class="volume"><i></i>거래량</span>
         </div>
       </section>
+    </section>
+
+    <section class="panel decision-panel" aria-label="실제 매수 판단">
+      <h2>실제 매수 판단 · 종목별 누적 매입 한도 200만원</h2>
+      <p id="decisionMessage">실행 중 Trader의 판단 정보를 확인하고 있습니다.</p>
+      <table class="decision-table">
+        <thead><tr><th>종목 / 선정</th><th>현재가·매도호가 / MA20 / MFI10</th><th>보유 / 잔여 한도</th><th>판단 / 계산·주문 수량</th><th>차단·처리 사유</th><th>최근 관측 체결</th></tr></thead>
+        <tbody id="decisionRows"></tbody>
+      </table>
     </section>
 
     <section class="lower-grid">
@@ -353,16 +368,47 @@
       }));
     }
 
+    function renderDecisions(trading) {
+      const labels = {
+        blocked: '매수 차단', cash_unchecked: '조건 충족·예수금 미확인',
+        filled: '체결 확인', unfilled: '전송 후 체결 미확인',
+        dry_run: '모의 실행', selling: '매도 관리 중'
+      };
+      const current = trading?.state === 'fresh';
+      setText('#decisionMessage', `${trading?.message || '실행 판단 미확인'} 기록: ${trading?.generated_at || '--'}`);
+      $('#decisionMessage').style.color = current ? 'var(--muted)' : 'var(--coral)';
+      const rows = trading?.decisions || [];
+      $('#decisionRows').replaceChildren(...rows.map((stock) => {
+        const row = document.createElement('tr');
+        const order = stock.last_order;
+        const values = [
+          `${stock.company} (${stock.code}) / ${stock.selected ? '선정' : '미선정'}`,
+          `${safeNumber(stock.price, 0)}·${safeNumber(stock.ask, 0)} / ${safeNumber(stock.ma20)} / ${safeNumber(stock.mfi10)}`,
+          `${stock.quantity}주 / ${safeNumber(stock.budget_left, 0)}원`,
+          `${current ? (labels[stock.status] || '미확인') : '현재 미확인 (과거 관측)'} / ${stock.order_quantity}주`,
+          stock.reasons.length ? stock.reasons.join('; ') : '종목 한도 통과. 계좌 예산·주문 결과는 별도 확인',
+          order ? `${order.at} ${order.side === 'buy' ? '매수' : '매도'} ${order.quantity}주 (${order.status === 'filled' ? '체결 확인' : '모의'})` : '이번 실행에서 관측된 체결 없음'
+        ];
+        values.forEach((value) => {
+          const cell = document.createElement('td');
+          cell.textContent = value;
+          row.append(cell);
+        });
+        return row;
+      }));
+    }
+
     function renderDashboard(data) {
       dashboardData = data;
       setText('#analysisDate', data.analysis_date || '일봉 없음');
       setText('#candidateCount', `${data.candidate_count}종목`);
       setText('#selectedCount', `${data.selected_count}종목`);
       setText('#updatedAt', data.updated_at.slice(11));
-      setText('#selectionCaption', `${data.market} · ${data.selected_count}개 신호`);
+      setText('#selectionCaption', `${data.market} · ${data.selected_count}개 선정 (매수 가능과 다름)`);
       renderStocks(data.selected);
       renderRuntime(data.runtime);
       renderEvents(data.events);
+      renderDecisions(data.trading);
       if (!selectedCode || !data.selected.some((stock) => stock.code === selectedCode)) {
         selectedCode = data.selected[0]?.code || null;
         if (selectedCode) selectStock(selectedCode);

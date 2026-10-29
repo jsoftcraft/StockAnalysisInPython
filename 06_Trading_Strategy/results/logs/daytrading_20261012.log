@@ -1,5 +1,0 @@
-2026-10-12 11:16:20 INFO Buy window ended; starting monitor-only run through 18:00
-2026-10-12 11:16:20 INFO Starting MFI position monitor through 18:00
-2026-10-12 16:00:07 ERROR MFI position monitor exited with code 1; DayTrading will remain active until 18:00
-2026-10-12 16:00:07 INFO DayTrading daemon remains active until 2026-10-12T18:00
-2026-10-12 18:00:00 INFO DayTrading after-market monitoring window ended

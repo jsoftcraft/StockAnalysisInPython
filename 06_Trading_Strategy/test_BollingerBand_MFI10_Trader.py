@@ -433,6 +433,10 @@ class DailyDataAndDecisionTests(unittest.TestCase):
                 trader_class.call_args.kwargs['daily_price_sync'],
                 synchronizer.return_value if enabled else None,
             )
+            self.assertEqual(
+                trader_class.call_args.kwargs['status_path'] is not None,
+                live and not daytrading_only,
+            )
 
 
 class AfterHoursSellTests(unittest.TestCase):

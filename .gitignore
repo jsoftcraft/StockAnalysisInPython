@@ -1,0 +1,4 @@
+# Local data exports and runtime logs (including rotated logs).
+*.[cC][sS][vV]
+*.[lL][oO][gG]
+*.[lL][oO][gG].*
